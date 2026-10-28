@@ -1,0 +1,31 @@
+# Secrets: environment settings and Google service-account keys
+.env
+.env.*
+!.env.example
+credential*.json
+*service*account*.json
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# App download cache (FSI / TPU / GEPU, processed_data.py) and Shiny / Jupyter caches
+.cache/
+.ipynb_checkpoints/
+
+# Scratch notebook for developing cfm_data.py
+cfm_data/testing.ipynb
+
+# Claude Code local files (settings, locks, session data)
+.claude/
+CLAUDE.local.md
+
+# Excel workbooks in any folder (data files and Excel's ~$ lock files)
+*.xlsx
+
+# shinyapps.io deployment record (rsconnect-python)
+rsconnect-python/
+
+# Local virtual environments
+.venv/
+venv/

@@ -1,0 +1,16 @@
+# Dashboard app (main.py, processed_data.py, excel_export.py).
+# shinyapps.io installs these on deploy. The data pipeline's own packages are
+# in cfm_data/requirements.txt and are not needed by the app.
+# Versions are the ones tested in the cfm-final environment (Python 3.14).
+shiny==1.8.0
+shinywidgets==0.8.2
+shinyswatch==0.13.1
+faicons==0.2.2
+plotly==7.1.0
+pandas==3.1.0
+requests==2.34.2
+openpyxl==3.1.5
+cache-pandas==1.0.0
+# renders the README tabs (also installed with shiny)
+markdown-it-py==4.2.0
+mdit-py-plugins==0.6.1
