@@ -1,0 +1,18 @@
+# Data pipeline in this folder only (not needed by the dashboard app).
+# Versions are the ones tested in the cfm-final environment (Python 3.14).
+
+# cfm_data.py
+pandas==3.1.0
+numpy==2.5.4
+requests==2.34.2
+openpyxl==3.1.5
+arch==8.0.0
+
+# data download.py (Google Sheets upload)
+gspread==6.2.1
+gspread-dataframe==4.0.0
+google-auth==2.62.0
+python-dotenv==1.2.4
+
+# testing.ipynb (Jupyter kernel for VS Code)
+ipykernel==7.4.0
