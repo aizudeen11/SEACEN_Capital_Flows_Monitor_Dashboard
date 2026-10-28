@@ -29,3 +29,6 @@ rsconnect-python/
 # Local virtual environments
 .venv/
 venv/
+
+# shinyapps.io manifest (regenerated on every deploy)
+manifest.json
