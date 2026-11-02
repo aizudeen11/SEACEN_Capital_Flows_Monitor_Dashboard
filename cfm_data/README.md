@@ -1,6 +1,6 @@
 # cfm_data — SEACEN Capital Flow Monitor data pipeline
 
-`cfm_data.py` builds every table the Capital Flow Monitor dashboard needs. It reads two Excel workbooks and five public data sources (APIs and downloads). It was compiled from the working notebook (now `testing.ipynb` in this folder), with the exploratory cells removed. Every table it produces was checked against the notebook's output and matches exactly. The one exception is the policy-rate fix described under [Policy rates](#policy-rates).
+`cfm_data.py` builds every table the SEACEN Capital Flow Monitor dashboard needs. It reads two Excel workbooks and several public data sources (APIs and downloads). `data download.py` uploads the tables to the Google Sheets the dashboard reads.
 
 ## Contents
 
@@ -15,25 +15,25 @@
 
 ## Quick start
 
-**Python environment.** The project's environment is `C:\Users\AhmadAizudeen\.venvs\cfm-final` (Python 3.14, pandas 3.1). Python is not on PATH, so call it by its full path:
+**Python environment.** Python 3.11 or later. Use the same virtual environment as the app (see the main README's Quick start) and install the pipeline's packages into it:
 
-```powershell
-$py = "$env:USERPROFILE\.venvs\cfm-final\Scripts\python.exe"
-
-# Build everything and print a summary (uses the workbooks in cfm_data/)
-& $py cfm_data\cfm_data.py
-
-# Other workbook copies
-& $py cfm_data\cfm_data.py --raw "C:\path\raw data for CFM.xlsx" --fsi "C:\path\00 dlx.xlsx"
-
-# Override the automatic FSI cutoff
-& $py cfm_data\cfm_data.py --cutoff 2026-09
+```bash
+pip install -r cfm_data/requirements.txt
 ```
 
-**Packages:** `pandas`, `numpy`, `requests`, `openpyxl` and `arch` (needed for the FSI's GARCH step):
+These include `pandas`, `numpy`, `requests`, `openpyxl`, `arch` (for the FSI's GARCH step) and the Google Sheets packages used for uploading.
 
-```powershell
-& $py -m pip install pandas numpy requests openpyxl arch
+From the project folder, with the environment active:
+
+```bash
+# Build everything and print a summary (uses the workbooks in cfm_data/)
+python cfm_data/cfm_data.py
+
+# Use workbooks saved elsewhere
+python cfm_data/cfm_data.py --raw "path/to/raw data for CFM.xlsx" --fsi "path/to/00 dlx.xlsx"
+
+# Override the automatic FSI cutoff
+python cfm_data/cfm_data.py --cutoff YYYY-MM
 ```
 
 **From other code** (e.g. `processed_data.py`), import the module and use the functions:
@@ -55,25 +55,23 @@ A full `load_all()` takes about a minute. Most of the time goes on the downloads
 
 ### One-time setup
 
-1. **Packages:** everything both scripts need is listed in `requirements.txt`:
-   ```powershell
-   & $py -m pip install -r cfm_data\requirements.txt
-   ```
-2. **Service-account key:** put the Google service-account key file in `cfm_data/` as `credential.json`. To use another name or location, set `GOOGLE_CREDENTIALS_FILE` in `.env`.
+1. **Packages:** everything both scripts need is listed in `cfm_data/requirements.txt` (see [Quick start](#quick-start)).
+2. **Service-account key:** create a Google Cloud service account with the Google Sheets API enabled, download its JSON key, and put it in `cfm_data/` as `credential.json`. To use another name or location, set `GOOGLE_CREDENTIALS_FILE` in `.env`.
 3. **Sheet access:** share both Google Sheets with the service account's email address (the `client_email` in the key file), with **Editor** access.
-4. **Settings:** check `cfm_data/.env`. It holds the key-file path and the sheet IDs. `.env.example` shows the format, for anyone setting this up fresh.
+4. **Settings:** copy `cfm_data/.env.example` to `cfm_data/.env` and fill in the key-file path and the two sheet IDs (the long ID in each sheet's URL).
+5. **Publish the sheets:** in each Google Sheet, **File → Share → Publish to web** the whole document as Microsoft Excel (.xlsx), with **Automatically republish when changes are made** ticked. The dashboard reads these published links (`MAIN_URL` and `FSI_URL` in `processed_data.py`).
 
 `.env` and any `credential*.json` file are listed in the project's `.gitignore`, so they're never committed. Only `.env.example` (no real values) is meant to be shared.
 
 ### Running it
 
-```powershell
+```bash
 cd cfm_data
-& $py "data download.py" --dry-run                  # build everything, upload nothing, show what would go where
-& $py "data download.py"                            # build and upload everything
-& $py "data download.py" --only fx cds fsi          # upload only these worksheets
-& $py "data download.py" --xlsx backup.xlsx         # also save every table to a local Excel file
-& $py "data download.py" --cutoff 2026-09           # override the automatic FSI cutoff
+python "data download.py" --dry-run                  # build everything, upload nothing, show what would go where
+python "data download.py"                            # build and upload everything
+python "data download.py" --only fx cds fsi          # upload only these worksheets
+python "data download.py" --xlsx backup.xlsx         # also save every table to a local Excel file
+python "data download.py" --cutoff YYYY-MM           # override the automatic FSI cutoff
 ```
 
 ### What goes where
@@ -83,13 +81,15 @@ cd cfm_data
 | `SHEET_ID_MAIN` | `vix_data`, `policy_rate1`, `fx`, `cds`, `liquidity`, `gdp_growth`, `stock_price_index`, `sovereign_bond_yields`, `capital_flows`, `inflation_forecast`, `gdp_growth_forecast`, `cpi_yoy`, `cpi_yoy_3mma`, `today` (upload log, see below) |
 | `SHEET_ID_FSI` | `fsi`, `yield_data_calc`, `stock_data_calc2`, `empi`, `financial_sector_beta`, `garch`, `fsi_missing` |
 
-The worksheet names in `SHEET_ID_MAIN` are the ones `processed_data.py` reads. **Don't rename them** without changing the app too. The app builds its two policy-rate subsets from `policy_rate1`, so only the full table is uploaded. `SHEET_ID_SECTION2` is kept in `.env` from the old script but isn't uploaded yet.
+The worksheet names in `SHEET_ID_MAIN` are the ones `processed_data.py` reads. **Don't rename them** without changing the app too. The app builds its two policy-rate subsets from `policy_rate1`, so only the full table is uploaded. A `SHEET_ID_SECTION2` setting, if present in `.env`, isn't used yet.
+
+The main sheet also holds two worksheets you maintain by hand, which the uploader never touches: `economics_event` (the event markers) and `to_show` (the display switches; see the main README).
 
 ### How uploading behaves
 
 - **Build first:** every requested table is built before anything is uploaded, so a data error stops the run before Google Sheets is touched.
 - **Existing worksheets are overwritten in place, then trimmed.** The new table is written over the old one, every cell included, so nothing old survives inside it. Then any leftover rows and columns are cut off.
-  - A worksheet's link, its position and any formulas pointing at it keep working. (The old script deleted and re-created each worksheet, which broke those.)
+  - A worksheet's link, its position and any formulas pointing at it keep working.
   - Nothing is cleared first, so a failed request leaves that worksheet's **old data in place**, never an empty worksheet.
   - A worksheet that doesn't exist yet is created.
 - **Other worksheets:** worksheets the script doesn't manage (e.g. `economics_event`) are never touched.
@@ -132,7 +132,6 @@ cfm_data/
 ├── .env.example            # template for .env
 ├── credential.json         # Google service-account key (git-ignored, add yourself)
 ├── README.md
-├── testing.ipynb           # the working notebook the code came from (reference only, git-ignored: its file paths are outdated)
 ├── raw data for CFM.xlsx   # RAW_PATH
 └── 00 dlx.xlsx             # FSI_PATH
 ```
@@ -142,7 +141,7 @@ cfm_data/
 | `RAW_PATH` | `raw data for CFM.xlsx` | `GDP`, `Policy Rate`, `FX`, `CDS`, `Yields YTD`, `stock indices`, `Inflation forecast`, `GDP growth`, `Inflation`, `VN CPI` |
 | `FSI_PATH` | `00 dlx.xlsx` | `00 dlx` (first sheet), `Yields2`, `Stock Price Indexes`, `FX`, `ORA` |
 
-The `Metadata` sheet in `raw data for CFM.xlsx` isn't read. Every sheet is read **by name**, so the sheet order doesn't matter.
+The `Metadata` sheet in `raw data for CFM.xlsx` isn't read. Every sheet is read **by name**, so the sheet order doesn't matter. Both workbooks hold licensed CEIC, Haver Analytics and FocusEconomics data, so they aren't in the Git repository; get them from whoever maintains the data.
 
 ### Online sources
 
@@ -207,8 +206,7 @@ Sizes and latest periods are as of the latest upload (<!--live:*:updated-->28 Oc
 - **China:** the `Policy Rate` sheet has no China rate, so China comes from the BIS API.
 - **Chinese Taipei:** `Taiwan (China)` is renamed `Chinese Taipei`, as in every table (see **Chinese Taipei** below).
 - **Region subsets:** `POLICY_REGIONS_1` and `POLICY_REGIONS_2` use the names in the data: `European Union`, `South Korea` and `Chinese Taipei`.
-
-  **Changed from the notebook:** the notebook filters with `Euro Area` and `Korea`. Those names don't exist in the data, so the Euro Area and Korea were silently left out of the "Selected Region 1/2" views. The dashboard builds these views itself, in `processed_data.py`. It renames `South Korea` to `Korea` when loading, so Korea is now included, but it still looks for `Euro Area` and needs the same fix for that.
+- **Dashboard views:** the dashboard builds its own "Selected Region 1/2" views from the full table, in `processed_data.py`. It renames `South Korea` to `Korea` when loading, so Korea is included, but it looks for `Euro Area`, which the data calls `European Union`, so the Euro Area is left out (a known issue).
 
 #### Chinese Taipei
 
@@ -236,8 +234,8 @@ For each economy, the FSI adds up five standardised components:
 - **Automatic by default** (`FSI_CUTOFF = None`, see `fsi_auto_cutoff()`). The cutoff is the latest month for which **every market input** (10-year yields, stock indices, financial-sector indices, FX) has data.
 - **Allowed to lag:** reserves (ORA) don't hold the cutoff back; they're carried forward and reported.
 - **Stale series:** a market series more than `FSI_STALE_MONTHS` (12) months behind the newest one (e.g. the Thai market caps that stopped in Jul 2023) is treated as stale. It's ignored when choosing the cutoff, then carried forward and reported.
-- **Latest upload:** the cutoff was **<!--live:fsi:covers-->Aug 2026<!--/live-->**. In that data the Chinese Taipei and India yields ended in Aug 2026, while the other market inputs reached Sep 2026.
-- **Override:** to force a month, set `FSI_CUTOFF = "2026-09"` or pass `--cutoff 2026-09`.
+- **Latest upload:** the cutoff was **<!--live:fsi:covers-->Aug 2026<!--/live-->**. The run prints the cutoff it chose and the inputs it carried forward; `fsi_missing` keeps the same list.
+- **Override:** to force a month, set `FSI_CUTOFF = "YYYY-MM"` or pass `--cutoff YYYY-MM`.
 
 #### Forecasts (`ppp_weighted_forecast`)
 
@@ -253,7 +251,7 @@ For each economy, the FSI adds up five standardised components:
    - Unit `%` (Vietnam): the value is the YoY rate itself.
 2. **Vietnam's earlier months:** Vietnam's months before the `Inflation` sheet's data starts (Nov 2025) are filled from the `VN CPI` sheet. Where both sheets have a month, the `Inflation` sheet wins.
 3. **3-month average:** the 3-month moving average of the month and the two before it. All three months must have a value.
-4. **Gaps:** months still missing a YoY after the first year are returned in `cpi_gaps`. In the Oct 2026 data these were Brunei and Nepal, Sep 2026.
+4. **Gaps:** months still missing a YoY after the first year are returned in `cpi_gaps`, and the run prints them.
 
 ## Settings to update
 
@@ -276,9 +274,9 @@ The forecast years (last, this and next year) and the GDP weights' last year fol
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `PermissionError: [Errno 13] Permission denied: '...xlsx'` | The workbook is open in Excel, or OneDrive is syncing it | Close it in Excel or wait for the sync. Alternatively, copy it and pass the copy with `--raw` / `--fsi` |
-| `OSError: [Errno 22] Invalid argument` when reading a workbook | OneDrive "online-only" placeholder: the file isn't downloaded | Right-click the file → **Always keep on this device** |
-| `ConnectionResetError`, `ChunkedEncodingError`, `ReadTimeout` | A download was cut off. This happened once with the IIF file during testing | Run again. There's no automatic retry |
+| `PermissionError: [Errno 13] Permission denied: '...xlsx'` | The workbook is open in Excel, or a cloud-sync service (e.g. OneDrive) is syncing it | Close it in Excel or wait for the sync. Alternatively, copy it and pass the copy with `--raw` / `--fsi` |
+| `OSError: [Errno 22] Invalid argument` when reading a workbook | The file is a cloud-sync "online-only" placeholder that isn't downloaded | Make it available offline (in OneDrive: right-click the file → **Always keep on this device**) |
+| `ConnectionResetError`, `ChunkedEncodingError`, `ReadTimeout` | A download was cut off | Run again. There's no automatic retry |
 | `ValueError: ... did not return an Excel file; the IIF link may have changed` | IIF moved or renamed its portfolio flows file | Find the new link on iif.com and update `IIF_FLOWS_URL` |
 | `HTTPError 404` from `api.imf.org` | The IMF released a new WEO dataflow version and retired `9.0.0` | Update the version in `IMF_WEO_URL` |
 | `KeyError` with a sheet name (e.g. `'Worksheet named 'GDP' not found'`) | A sheet was renamed | Rename it back, or update the `sheet_name=` in the function |
@@ -308,7 +306,7 @@ These are worth checking whenever the data is refreshed:
 
 1. **Thailand market caps stopped in Jul 2023.** The three `SET: Market Capitalization` series (Banking, Finance and Securities, Insurance) haven't updated since Jul 2023. Their Jul 2023 values are carried forward to the cutoff, so Thailand's financial-sector index has used fixed sector weights since then. `fsi_missing` lists this every run. Check at the source whether these series were discontinued.
 2. **FSI cutoff filling.** Any FSI input that's behind (e.g. China's reserves, ORA) repeats its last value up to the cutoff. Those months' FSI is partly carried-forward data. Check `fsi_missing` before publishing.
-3. **FX counts a missing month as 0.** If an exchange rate is missing in the first or last month of a year, the "change" becomes ±100% or the full level. Bond yields and stocks skip missing months instead. FX was kept as in the notebook. Changing it to match the others is a two-line fix.
+3. **FX counts a missing month as 0.** If an exchange rate is missing in the first or last month of a year, the "change" becomes ±100% or the full level. Bond yields and stocks skip missing months instead. Changing FX to match them is a two-line fix in `forex_exchange()`.
 4. **Vietnam CPI comes from two sources.** Before Nov 2025 it's from `VN CPI`; from Nov 2025 it's from `Inflation`. If both are updated inconsistently, there can be a jump where they meet.
 5. **Unit detection in CPI.** A row counts as already-YoY only if its unit is exactly `Prev Year=100` or `%`. If CEIC changes a unit label, the row would get the YoY formula applied to a YoY rate, giving nonsense numbers without an error.
 6. **Partial group averages.**
@@ -326,12 +324,12 @@ These are worth checking whenever the data is refreshed:
 
    Chinese Taipei is the exception: it's spelled the same in every table (see below). The dashboard doesn't show these differences: as it loads the sheets, it renames `South Korea` to `Korea` and `Hong Kong SAR (China)` to `Hong Kong` (`CHART_NAMES` in `processed_data.py`), so its charts use one spelling.
 
-8. **IIF revises its data.** Portfolio flows for past months change between downloads, sometimes by tens of billions. Compared with the app's Apr 2025 snapshot, 64 months of debt flows differ. Rerunning will change history.
+8. **IIF revises its data.** Portfolio flows for past months change between downloads, sometimes by tens of billions, so every rerun can change past values.
 9. **VIX is sorted latest-first**, unlike every other time series.
 
 ## Method notes and open questions
 
-These are carried over unchanged from the original notebook code. They're worth a methodology review, but they aren't code bugs:
+These are methodology choices worth reviewing; they aren't code bugs:
 
 - **FSI beta:** the covariance divides by *n* (`bias=True`) but the variance by *n − 1* (`ddof=1`), so every beta is scaled down slightly.
 - **FSI financial-index base:** Singapore's built index resets to 100 at Dec 2008, but Thailand's never resets.

@@ -124,7 +124,7 @@ SHOW_CREDIT = all_df[20]
 # (included if that sheet or cell is missing).
 EXCEL_FULL = all_df[21]
 EXCEL_RESTRICTED = [
-    "Policy Rate", "5-Year Sovereign CDS", "Headline Inflation", "GDP Growth and Inflation Outlook",
+    "Policy Rate", "5-Year Sovereign CDS", "Monthly Inflation", "GDP Growth and Inflation Outlook",
 ]
 if EXCEL_FULL:
     EXCEL_NOTE = "The Excel download includes every chart on the dashboard."
@@ -258,13 +258,33 @@ def card_notes(note=None, source=None):
     return ui.card_footer(*parts, class_="text-muted small")
 
 
-# The project's README files, shown as tabs next to the dashboard. They are
-# read once at startup, so an edited README shows after the app restarts.
+# The project's README files and version history, shown as tabs next to the
+# dashboard. They are read once at startup, so an edited file shows after the
+# app restarts.
 APP_DIR = Path(__file__).resolve().parent
+UPDATES_PATH = APP_DIR / "UPDATE.md"
 DOC_TABS = [
     ("About", "book-open", APP_DIR / "README.md"),
+    ("Updates", "clock-rotate-left", UPDATES_PATH),
     ("Data pipeline", "database", APP_DIR / "cfm_data" / "README.md"),
 ]
+
+
+def _app_version():
+    """The newest version in UPDATE.md: its first "## <version>" heading."""
+    try:
+        match = re.search(r"^## \[?(\d+\.\d+\.\d+)", UPDATES_PATH.read_text(encoding="utf-8"), re.MULTILINE)
+    except OSError:
+        return None
+    return match[1] if match else None
+
+
+APP_VERSION = _app_version()
+
+# Images served by the app (the www/ folder, mounted at the site root): the
+# SEACEN symbol, used as the favicon and in the navbar. From seacen.org.
+STATIC_DIR = APP_DIR / "www"
+LOGO_ICON = "seacen-icon.png"
 # GitHub-style Markdown (tables etc.) with heading ids, so the READMEs'
 # "Contents" links (#section-name) jump within the page.
 _MARKDOWN = MarkdownIt("gfm-like").use(anchors_plugin, max_level=3)
@@ -355,6 +375,13 @@ sidebar = ui.sidebar(
                 DATA_LAST_UPDATED.strftime("%d %b %Y, %H:%M") if DATA_LAST_UPDATED is not None else "unknown",
                 class_="fw-semibold",
             ),
+            class_="small mb-1",
+        ),
+        ui.p(
+            icon_svg("code-branch"),
+            " Version ",
+            ui.span(APP_VERSION or "unknown", class_="fw-semibold"),
+            ui.span(" (see the Updates tab)", class_="text-muted"),
             class_="small mb-2",
         ),
         ui.p(
@@ -819,6 +846,13 @@ dashboard_page = ui.layout_sidebar(
                 col_widths={"sm": (12)},
                 row_heights=["auto", 1],
             ),
+            card_notes(
+                note="Note: Global liquidity is measured by banks' international claims on all sectors worldwide, "
+                "i.e. cross-border claims plus local claims in foreign currency, in all currencies and "
+                "instruments. Bars show the year-on-year percentage change for each quarter. Higher growth "
+                "indicates easier global funding conditions; a slowdown or contraction indicates tightening.",
+                source="Source: Bank for International Settlements (BIS), Global Liquidity Indicators.",
+            ),
             full_screen=True,
         ),
         fill=False,
@@ -845,8 +879,17 @@ app_ui = ui.page_navbar(
         if SHOW_CREDIT
         else []
     ),
-    title=ui.tags.span(icon_svg("chart-line"), " SEACEN Capital Flow Monitor Dashboard"),
-    header=ui.tags.style(DOC_CSS),
+    title=ui.tags.span(
+        ui.img(
+            src=LOGO_ICON, alt="", class_="me-2 bg-white rounded p-1 align-middle", style="height: 30px;"
+        ),
+        "SEACEN Capital Flow Monitor Dashboard",
+    ),
+    window_title="SEACEN Capital Flow Monitor Dashboard",
+    header=ui.TagList(
+        ui.head_content(ui.tags.link(rel="icon", type="image/png", href=LOGO_ICON)),
+        ui.tags.style(DOC_CSS),
+    ),
     theme=shinyswatch.theme.flatly(),
     # Keep the tab bar visible while scrolling down the dashboard.
     navbar_options=ui.navbar_options(position="sticky-top"),
@@ -1379,4 +1422,4 @@ def server(input, output, session):
         yield buf.getvalue()
 
 
-app = App(app_ui, server)
+app = App(app_ui, server, static_assets=STATIC_DIR)
