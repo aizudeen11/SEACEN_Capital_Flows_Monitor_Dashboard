@@ -27,7 +27,7 @@ The version shown in the dashboard's sidebar is read from the first entry below.
   - `excel_use` decides whether the Excel download includes the charts built from CEIC and Haver Analytics data (Policy Rate, 5-Year Sovereign CDS, Monthly Inflation, and GDP Growth and Inflation Outlook). A note and tooltip above the download button say which applies.
 
 ### Changed
-- **Name:** now the **SEACEN Capital Flow Monitor Dashboard**, and published at a new address, <https://ahmadaizudeen.shinyapps.io/SEACEN-CFM-Dashboard/> (previously `cfm-final`).
+- **Name:** now the **SEACEN Capital Flow Monitor Dashboard**, and published at a new address, <https://ahmadaizudeen.shinyapps.io/seacen-cfm-dashboard/> (previously `cfm-final`).
 - **Where the data comes from:**
   - The dashboard now reads published Google Sheets, kept for a day, instead of a workbook bundled with the app. A local copy is used only if the sheets can't be reached.
   - A new data pipeline (`cfm_data/`) builds every table and uploads it to the Google Sheets. It replaces the working notebook.

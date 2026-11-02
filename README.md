@@ -9,7 +9,7 @@ A [Shiny for Python](https://shiny.posit.co/py/) dashboard that charts capital-f
 - **Stress:** the Financial Stress Index (FSI).
 
 **Links:**
-- **Live app:** <https://ahmadaizudeen.shinyapps.io/SEACEN-CFM-Dashboard/>
+- **Live app:** <https://ahmadaizudeen.shinyapps.io/seacen-cfm-dashboard/>
 - **Source code:** <https://github.com/aizudeen11/SEACEN_Capital_Flows_Monitor_Dashboard>
 - **What's new:** [UPDATE.md](UPDATE.md) (the **Updates** tab in the dashboard) lists every version and its changes.
 - **Data pipeline:** [cfm_data/README.md](cfm_data/README.md) (the **Data pipeline** tab) explains how the data is built and uploaded.
