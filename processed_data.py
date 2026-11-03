@@ -341,6 +341,87 @@ def dfs1():
         excel_full,
     )
 
+
+# Published copy of the Section 2 (BoP / IIP) sheet, the one
+# cfm_data/"data download.py" uploads to as SHEET_ID_SECTION2. Read by the
+# Capital Flows tab.
+SECTION2_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vReR_hV-h-iryKTq7mbQLkqeDobiBV1Md69TPCO5aEOSUQB7KIra33FbXB1BZ2N2SYwy58kkwOxMdVU/pub?output=xlsx"
+SECTION2_SHEETS = [
+    "quarterly_type_half",
+    "quarterly_type_quarter",
+    "quarterly_region_half",
+    "annual_type_full",
+    "annual_region_full",
+]
+# Every other column of a Section 2 table is one period's values.
+SECTION2_LABELS = ["Group2", "Group", "Type", "Region", "Unit", "Last Update Time"]
+# The Section 2 sheets keep data_section_2.py's names, which other
+# applications also read; the charts use the dashboard's.
+SECTION2_NAMES = {
+    **CHART_NAMES,
+    "Taiwan": "Chinese Taipei",
+    "Taiwan (China)": "Chinese Taipei",
+    "Asian Advance Economies": "Asian Advanced Economies",
+}
+
+
+def _period_label(column):
+    """A period column's name as text: "2025" (annual), "1H2026"
+    (half-yearly, already text) or "2Q2026" (quarterly, a date in the
+    sheet)."""
+    if hasattr(column, "month"):
+        return f"{(column.month - 1) // 3 + 1}Q{column.year}"
+    return str(column)
+
+
+def _section2_table(df, already_billions=()):
+    """One Section 2 table ready for the charts: dashboard names, period
+    columns as text, values in US$ billion. The sheets hold US$ million,
+    except the half-yearly BoP tables, which data_section_2.py already
+    divides by 1,000: list those datasets (Group2) in `already_billions`. A
+    renamed economy can appear twice (Taiwan and Taiwan (China)); the row
+    with more data is kept."""
+    df = df.rename(columns=_period_label)
+    labels = [c for c in df.columns if c in SECTION2_LABELS]
+    periods = [c for c in df.columns if c not in labels]
+    df["Region"] = df["Region"].replace(SECTION2_NAMES)
+    df["Type"] = df["Type"].str.replace("Asian Advance Economies", "Asian Advanced Economies")
+    df[periods] = df[periods].apply(pd.to_numeric, errors="coerce")
+    in_millions = ~df["Group2"].isin(already_billions)
+    df.loc[in_millions, periods] = df.loc[in_millions, periods] / 1000
+    if "Unit" in df.columns:
+        df["Unit"] = "USD bn"
+    keys = [c for c in ("Group2", "Group", "Type", "Region") if c in df.columns]
+    filled = df[periods].notna().sum(axis=1)
+    df = df.loc[filled.sort_values(ascending=False, kind="stable").index].drop_duplicates(keys).sort_index()
+    return df.reset_index(drop=True)
+
+
+@timed_lru_cache(seconds=None, maxsize=None)
+def dfs2():
+    """The Section 2 tables for the Capital Flows tab, from the published
+    Section 2 sheet (cached for a day): (quarterly_type_half,
+    quarterly_type_quarter, quarterly_region_half, annual_type_full,
+    annual_region_full, upload log, last updated). None if the sheet can't
+    be downloaded and there is no cached copy, so the rest of the dashboard
+    still starts."""
+    try:
+        workbook = pd.ExcelFile(BytesIO(_fetch_cached(SECTION2_URL)))
+    except requests.RequestException as e:
+        print(f"Section 2 Google Sheet unavailable ({e}); the Capital Flows tab will be empty")
+        return None
+    sheets = pd.read_excel(workbook, sheet_name=SECTION2_SHEETS)
+    upload_log = _upload_log(workbook)
+    return (
+        _section2_table(sheets["quarterly_type_half"], already_billions=["BoP Quarterly"]),
+        _section2_table(sheets["quarterly_type_quarter"]),
+        _section2_table(sheets["quarterly_region_half"], already_billions=["BoP Quarterly"]),
+        _section2_table(sheets["annual_type_full"]),
+        _section2_table(sheets["annual_region_full"]),
+        upload_log,
+        _last_updated(upload_log),
+    )
+
 # @timed_lru_cache(seconds=None, maxsize=None)
 # def dataF():
 #     df = Data()

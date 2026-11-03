@@ -7,6 +7,7 @@ A [Shiny for Python](https://shiny.posit.co/py/) dashboard that charts capital-f
 - **Rates and flows:** policy rates, non-resident portfolio flows, global liquidity.
 - **Macro:** GDP growth, headline CPI inflation, GDP growth and inflation forecasts.
 - **Stress:** the Financial Stress Index (FSI).
+- **Capital flows (BoP and IIP):** balance of payments flows and international investment positions of the SEACEN economies, by regional group, category or economy.
 
 **Links:**
 - **Live app:** <https://ahmadaizudeen.shinyapps.io/seacen-cfm-dashboard/>
@@ -63,7 +64,11 @@ The SEACEN Capital Flow Monitor Dashboard should not be reported as representing
 
 ## Using the dashboard
 
-The **Dashboard** tab is a page of cards. Each card has its own chart, its own controls, and a footer with a note on what the chart shows and its source.
+The dashboard has two data tabs, **Macro-Financial** and **Capital Flows**.
+
+### Macro-Financial
+
+The **Macro-Financial** tab is a page of cards. Each card has its own chart, its own controls, and a footer with a note on what the chart shows and its source.
 
 | Card | What it shows | Controls |
 |---|---|---|
@@ -83,14 +88,33 @@ The **Dashboard** tab is a page of cards. Each card has its own chart, its own c
 
 An unfinished year is labelled `YTD` (year-to-date), for example `YTD2026`.
 
-**Sidebar**
+**Sidebar** (headed **SEACEN Macro-Financial Dashboard**)
 - **Data last refreshed:** when the data was last updated, and the dashboard's version number.
 - **Viewing tip:** the layout is designed for a large monitor. On a laptop, zoom the page out (Ctrl and − on Windows, ⌘ and − on a Mac; Ctrl/⌘ and 0 resets it).
 - **Download figures (Excel):** a workbook with one sheet per card, holding the data each card is showing (after its filters) and an Excel chart you can edit. Any active event markers are listed under the data. A note above the button says whether every chart is included.
 - **Economic event markers:** each chart with a **Show event markers** button can show events as dashed lines (single dates) or shaded bands (periods). You can add your own markers (date and label) or clear them; **Event details** lists every marker.
 - **Contact and disclaimer.**
 
-**Other tabs:** **About** (this page), **Updates** (version history) and **Data pipeline** (how the data is built).
+### Capital Flows
+
+The **Capital Flows** tab shows the balance of payments (BoP) and international investment position (IIP) of the 19 SEACEN economies, in US$ billion. Its sidebar, headed **SEACEN Capital Flows Dashboard**, has the same layout as the Macro-Financial one: at the top the date this data was last refreshed (it has its own Google Sheet, so the date can differ from the Macro-Financial tab's), the version number and the viewing tip; then the **Filters**; and at the bottom the contact details and disclaimer.
+
+| Filter | Choices |
+|---|---|
+| Dataset | Balance of Payments (flows) or International Investment Position (end-of-period positions) |
+| Frequency | Annual, half-yearly or quarterly. Quarterly data is shown by economy only |
+| View | **By region:** the regional groups stacked, with the Asia-Pacific total as a line. **By category:** the components (direct investment, portfolio equity and debt, loans, …) of one regional group. **By economy:** one item for the selected economies |
+| Years | which years to show |
+| Account | assets (for BoP: resident capital flows), liabilities (non-resident capital flows) or the current account (BoP only); for the By region and By category views |
+| Regional groups / Regional group / Item / Economies | depend on the view |
+
+- **Chart:** stacked bars, with their total as a line.
+- **Data table:** the numbers behind the chart, including each regional group's total, with a **Download CSV** link.
+- **Gaps:** periods with no data are left out. In the By economy view the table lists every selected economy, with blank cells where there is no data; economies with no data are left out of the chart.
+
+### Other tabs
+
+**About** (this page), **Updates** (version history) and **Data pipeline** (how the data is built).
 
 ---
 
@@ -109,8 +133,10 @@ The rest of this page is for people who run, maintain or deploy the dashboard.
 ## Project layout
 
 ```
-├── main.py               # the Shiny app (UI + server)
-├── processed_data.py     # loads the tables the app uses (dfs1 = live, dfs = local dev)
+├── main.py               # the Shiny app (UI + server); the Macro-Financial tab
+├── section2.py           # the Capital Flows tab (a Shiny module used by main.py)
+├── design.py             # shared colors, chart styling and card parts
+├── processed_data.py     # loads the tables the app uses (dfs1 = live, dfs = local dev, dfs2 = Capital Flows)
 ├── excel_export.py       # builds the "Download figures (Excel)" workbook
 ├── requirements.txt      # the app's packages
 ├── README.md             # this file (the About tab)
@@ -120,15 +146,17 @@ The rest of this page is for people who run, maintain or deploy the dashboard.
 ├── .cache/               # one-day download cache                            [not in git]
 ├── rsconnect-python/     # shinyapps.io deployment record                    [not in git]
 └── cfm_data/             # data pipeline: build tables, upload to Google Sheets
-    ├── cfm_data.py           # builds every table
-    ├── data download.py      # uploads the tables to Google Sheets
+    ├── cfm_data.py           # builds every dashboard table
+    ├── data_section_2.py     # builds the Section 2 BoP / IIP tables
+    ├── data download.py      # uploads the tables to Google Sheets (main, FSI and Section 2 sheets)
     ├── README.md             # pipeline documentation (the Data pipeline tab)
     ├── requirements.txt      # the pipeline's packages (not needed by the app)
     ├── .env.example          # template for .env
-    ├── .env                  # sheet IDs and key-file path                  [not in git]
+    ├── .env                  # sheet IDs, key-file path, Section 2 source paths [not in git]
     ├── credential.json       # Google service-account key                   [not in git]
     ├── raw data for CFM.xlsx # CEIC/Haver/FocusEconomics download            [not in git]
-    └── 00 dlx.xlsx           # FSI inputs                                     [not in git]
+    ├── 00 dlx.xlsx           # FSI inputs                                     [not in git]
+    └── BOP & IIP data/       # Section 2 BoP / IIP workbooks                  [not in git]
 ```
 
 ## Quick start
@@ -156,6 +184,8 @@ raw data for CFM.xlsx ─┐
 IMF / BIS / CBOE / IIF ┴─► cfm_data/cfm_data.py ─► data download.py                                      ├─► processed_data.dfs1() ─► main.py
                                                      └─► Google Sheet (FSI) ─► published link ───────────┤
                               TPU / GEPU (policyuncertainty.com) ────────────────────────────────────────┘
+
+BOP & IIP data/ ─► cfm_data/data_section_2.py ─► data download.py ─► Google Sheet (Section 2) ─► published link ─► processed_data.dfs2() ─► section2.py
 ```
 
 `processed_data.dfs1()` is the loader the app uses (`all_df = dfs1()` in [main.py](main.py)). It returns 18 tables, plus the upload time, the upload log and the two display switches:
@@ -185,6 +215,12 @@ IMF / BIS / CBOE / IIF ┴─► cfm_data/cfm_data.py ─► data download.py   
 
 The positions matter: `main.py` uses `all_df[i]` by number. **Add new tables at the end** of the tuple in [processed_data.py](processed_data.py), in both `dfs()` and `dfs1()`; never insert in the middle.
 
+- **Capital Flows data.** `processed_data.dfs2()` reads the published Section 2 Google Sheet (`SECTION2_URL`) and returns its five tables plus its upload log and refresh time; `section2.py` uses it. As it loads, it:
+  - converts every value to US$ billion (the sheet holds US$ million, except the half-yearly BoP tables, which the pipeline already divides by 1,000);
+  - renames economies and groups for the charts (`SECTION2_NAMES`: Taiwan → Chinese Taipei, Hong Kong SAR (China) → Hong Kong, Asian Advance Economies → Asian Advanced Economies), keeping the sheet's spellings unchanged for other applications;
+  - labels quarters like `2Q2026`.
+  
+  If the sheet can't be downloaded and there's no cached copy, the Capital Flows tab shows a message and the rest of the dashboard still works.
 - **Loader functions.** `dfs()` is a development loader that reads a local `test.xlsx` and `financial stress index.xlsx` instead of the Google Sheets. To use it, change `all_df = dfs1()` to `dfs()` in `main.py`.
 - **When data is read.** Both loaders run once, when the app starts. Downloads are also cached on disk in `.cache/` for a day; if a download fails, the last cached copy is used.
 - **Google Sheets.** `dfs1()` downloads the *published* copies of the main and FSI Google Sheets (`MAIN_URL` and `FSI_URL` in `processed_data.py`), the sheets `data download.py` uploads to. If the main sheet can't be downloaded and there's no cached copy, the app falls back to `test (1).xlsx`, and the sidebar date shows "unknown".
@@ -218,8 +254,9 @@ The full data-refresh process is in [cfm_data/README.md](cfm_data/README.md). In
    ```bash
    cd cfm_data
    python "data download.py" --dry-run    # check every table builds
-   python "data download.py"              # upload to both Google Sheets
+   python "data download.py"              # upload to all three Google Sheets (main, FSI, Section 2)
    ```
+   - **Section 2:** a full run also builds the Section 2 BoP / IIP tables, which need their own source files (paths in `.env`). To refresh only the dashboard's data, list its worksheets with `--only`; see [cfm_data/README.md](cfm_data/README.md#running-it).
    - **Setup:** this needs `cfm_data/.env` and a Google service-account key; see [cfm_data/README.md](cfm_data/README.md#uploading-to-google-sheets).
    - **Timing:** the upload is paced to stay under Google's request limit, so it takes a couple of minutes.
    - **The upload log:** it also refreshes the `today` worksheet, which drives the sidebar date and the live values in the **Data pipeline** tab.
@@ -246,7 +283,7 @@ The app is published on [shinyapps.io](https://www.shinyapps.io) with [rsconnect
    rsconnect add --account <ACCOUNT> --name shinyapps --token <TOKEN> --secret <SECRET>
    ```
    The token is a password: don't commit it or paste it into files in the project.
-3. **Check locally first.** Run the app (see [Quick start](#quick-start)) and look over every card, the Excel download and the tabs.
+3. **Check locally first.** Run the app (see [Quick start](#quick-start)) and look over every card, the Excel download, the Capital Flows views and the tabs.
 4. **Empty `.cache/`.** Cached files uploaded with the app look freshly downloaded on the server, so it would serve your local copy for up to a day.
 5. **Deploy:**
    ```bash
@@ -254,6 +291,7 @@ The app is published on [shinyapps.io](https://www.shinyapps.io) with [rsconnect
        --override-python-version 3.12.2 \
        --exclude "cfm_data/.env" --exclude "cfm_data/*.xlsx" --exclude "cfm_data/*.json" \
        --exclude "cfm_data/*.ipynb" --exclude "cfm_data/*.py" --exclude "cfm_data/requirements.txt" \
+       --exclude "cfm_data/BOP & IIP data/*" \
        --exclude ".cache/*" --exclude ".claude/*" --exclude ".venv/*"
    ```
    (In PowerShell, end each continued line with a backtick `` ` `` instead of `\`.)
@@ -266,7 +304,7 @@ The app is published on [shinyapps.io](https://www.shinyapps.io) with [rsconnect
    - **Instance idle timeout:** how long the app stays up without visitors. A shorter timeout means it restarts, and so reloads the Google Sheets, more often.
    - **Startup timeout:** raise it if the logs show the app being stopped while it downloads the sheets at startup.
 
-**What the server needs:** `main.py`, `processed_data.py`, `excel_export.py`, `requirements.txt`, `README.md`, `UPDATE.md` and `cfm_data/README.md` (the three document tabs), the `www/` folder (favicon and navbar logo), plus `test (1).xlsx` as the offline fallback if you have it.
+**What the server needs:** `main.py`, `section2.py`, `design.py`, `processed_data.py`, `excel_export.py`, `requirements.txt`, `README.md`, `UPDATE.md` and `cfm_data/README.md` (the three document tabs), the `www/` folder (favicon and navbar logo), plus `test (1).xlsx` as the offline fallback if you have it.
 
 **After a data upload** no redeploy is needed: click **Restart** on the app's page in shinyapps.io.
 
@@ -294,7 +332,7 @@ git clone https://github.com/aizudeen11/SEACEN_Capital_Flows_Monitor_Dashboard.g
 
 **A fresh clone needs these files, obtained separately:**
 - **To run the app:** nothing. It reads the published Google Sheets. `test (1).xlsx` is an optional offline fallback.
-- **To build and upload the data:** `cfm_data/raw data for CFM.xlsx` and `cfm_data/00 dlx.xlsx` (licensed data), `cfm_data/.env` (copy `.env.example`) and a Google service-account key with Editor access to both sheets.
+- **To build and upload the data:** `cfm_data/raw data for CFM.xlsx` and `cfm_data/00 dlx.xlsx` (licensed data), the Section 2 sources (the `cfm_data/BOP & IIP data/` workbooks and the files named in `.env`), `cfm_data/.env` (copy `.env.example`) and a Google service-account key with Editor access to all three sheets.
 
 ## Known issues
 

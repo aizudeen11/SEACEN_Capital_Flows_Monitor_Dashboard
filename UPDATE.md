@@ -9,6 +9,22 @@ What has changed in the SEACEN Capital Flow Monitor Dashboard, newest version fi
 
 The version shown in the dashboard's sidebar is read from the first entry below. To release a new version, add an entry at the top, in the same format (`## <version> — <date>`).
 
+## 2.1.0 — 3 November 2026
+
+### New
+- **Section 2 data (BoP and IIP).** The data pipeline now also builds the Section 2 balance of payments and international investment position tables (quarterly, half-yearly and annual, by economy and by regional group) and uploads them to their own Google Sheet, with its own upload log.
+  - It reads eight compiled workbooks (IMF and central-bank BoP and IIP, quarterly and annual), one sheet per economy.
+  - Only the 19 SEACEN economies are kept; the non-SEACEN economies in the IMF workbooks are left out.
+  - Chinese Taipei is read from the central-bank workbooks, so it no longer needs a separate file. Its IIP now runs to 2025.
+- **Capital Flows tab.** A new tab for the Section 2 data: BoP flows and IIP positions of the SEACEN economies (US$ billion), annual, half-yearly or quarterly.
+  - Three views: by regional group, by category (direct investment, portfolio equity and debt, loans, …) for one group, or one item by economy.
+  - A stacked bar chart with the total as a line, and a data table with a CSV download.
+  - Its own "data last refreshed" date, from the Section 2 sheet.
+
+### Changed
+- **Tab name:** the **Dashboard** tab is now **Macro-Financial**. Its sidebar is headed **SEACEN Macro-Financial Dashboard**, without the "About this dashboard" title.
+- **Excel download:** covers the Macro-Financial tab; its note now says so.
+
 ## 2.0.0 — 2 November 2026
 
 ### New

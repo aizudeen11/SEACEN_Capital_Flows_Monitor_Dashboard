@@ -1,6 +1,6 @@
 # cfm_data — SEACEN Capital Flow Monitor data pipeline
 
-`cfm_data.py` builds every table the SEACEN Capital Flow Monitor dashboard needs. It reads two Excel workbooks and several public data sources (APIs and downloads). `data download.py` uploads the tables to the Google Sheets the dashboard reads.
+`cfm_data.py` builds every table the SEACEN Capital Flow Monitor dashboard needs. It reads two Excel workbooks and several public data sources (APIs and downloads). `data_section_2.py` builds the Section 2 balance of payments (BoP) and international investment position (IIP) tables. `data download.py` uploads all of them to Google Sheets.
 
 ## Contents
 
@@ -49,7 +49,7 @@ A full `load_all()` takes about a minute. Most of the time goes on the downloads
 
 ## Uploading to Google Sheets
 
-`data download.py` builds the tables with `cfm_data.py` and writes them to two Google Sheets.
+`data download.py` builds the tables with `cfm_data.py` and `data_section_2.py` and writes them to three Google Sheets: main, FSI and Section 2.
 
 **What the dashboard reads:** `processed_data.py` downloads the *published* copies of both Google Sheets (main and FSI) and caches them for a day. So after an upload, every chart updates on the next app start once its cached copy has expired (see [Upload problems](#upload-problems)). The local `test (1).xlsx` is used only if the main sheet can't be downloaded.
 
@@ -58,7 +58,10 @@ A full `load_all()` takes about a minute. Most of the time goes on the downloads
 1. **Packages:** everything both scripts need is listed in `cfm_data/requirements.txt` (see [Quick start](#quick-start)).
 2. **Service-account key:** create a Google Cloud service account with the Google Sheets API enabled, download its JSON key, and put it in `cfm_data/` as `credential.json`. To use another name or location, set `GOOGLE_CREDENTIALS_FILE` in `.env`.
 3. **Sheet access:** share both Google Sheets with the service account's email address (the `client_email` in the key file), with **Editor** access.
-4. **Settings:** copy `cfm_data/.env.example` to `cfm_data/.env` and fill in the key-file path and the two sheet IDs (the long ID in each sheet's URL).
+4. **Settings:** copy `cfm_data/.env.example` to `cfm_data/.env` and fill in:
+   - the key-file path;
+   - the three sheet IDs (`SHEET_ID_MAIN`, `SHEET_ID_FSI`, `SHEET_ID_SECTION2`: the long ID in each sheet's URL);
+   - the two Section 2 source paths (`DATA`, `AUTOMATION`), and optionally `IIPBOP`; see [Section 2 inputs](#section-2-inputs).
 5. **Publish the sheets:** in each Google Sheet, **File → Share → Publish to web** the whole document as Microsoft Excel (.xlsx), with **Automatically republish when changes are made** ticked. The dashboard reads these published links (`MAIN_URL` and `FSI_URL` in `processed_data.py`).
 
 `.env` and any `credential*.json` file are listed in the project's `.gitignore`, so they're never committed. Only `.env.example` (no real values) is meant to be shared.
@@ -72,7 +75,12 @@ python "data download.py"                            # build and upload everythi
 python "data download.py" --only fx cds fsi          # upload only these worksheets
 python "data download.py" --xlsx backup.xlsx         # also save every table to a local Excel file
 python "data download.py" --cutoff YYYY-MM           # override the automatic FSI cutoff
+python "data download.py" --section2-year 2019       # first year of the Section 2 tables (default 2019)
+python "data download.py" --only quarterly_type_half quarterly_type_quarter quarterly_region_half annual_type_full annual_region_full
+                                                     # Section 2 only
 ```
+
+A full run builds every table, Section 2 included, so it needs the Section 2 source files. To refresh only the dashboard's data, list its worksheets with `--only`.
 
 ### What goes where
 
@@ -80,8 +88,9 @@ python "data download.py" --cutoff YYYY-MM           # override the automatic FS
 |---|---|
 | `SHEET_ID_MAIN` | `vix_data`, `policy_rate1`, `fx`, `cds`, `liquidity`, `gdp_growth`, `stock_price_index`, `sovereign_bond_yields`, `capital_flows`, `inflation_forecast`, `gdp_growth_forecast`, `cpi_yoy`, `cpi_yoy_3mma`, `today` (upload log, see below) |
 | `SHEET_ID_FSI` | `fsi`, `yield_data_calc`, `stock_data_calc2`, `empi`, `financial_sector_beta`, `garch`, `fsi_missing` |
+| `SHEET_ID_SECTION2` | `quarterly_type_half`, `quarterly_type_quarter`, `quarterly_region_half`, `annual_type_full`, `annual_region_full`, `today` (its own upload log) |
 
-The worksheet names in `SHEET_ID_MAIN` are the ones `processed_data.py` reads. **Don't rename them** without changing the app too. The app builds its two policy-rate subsets from `policy_rate1`, so only the full table is uploaded. A `SHEET_ID_SECTION2` setting, if present in `.env`, isn't used yet.
+The worksheet names in `SHEET_ID_MAIN` are the ones `processed_data.py` reads. **Don't rename them** without changing the app too. The app builds its two policy-rate subsets from `policy_rate1`, so only the full table is uploaded. The Section 2 worksheet names are read by the dashboard's Capital Flows tab (`processed_data.dfs2()`) and by other applications, so keep those too, along with their column layout and names (the dashboard renames economies for its charts itself).
 
 The main sheet also holds two worksheets you maintain by hand, which the uploader never touches: `economics_event` (the event markers) and `to_show` (the display switches; see the main README).
 
@@ -100,7 +109,8 @@ The main sheet also holds two worksheets you maintain by hand, which the uploade
 - **Pacing:** Google allows 60 requests per minute per user. The script counts its requests and pauses ("pausing …s to stay under Google's 50-per-minute limit") once 50 have gone out in the last minute, to leave headroom. A full upload therefore takes a couple of minutes. The limit is `REQUESTS_PER_MINUTE`.
 - **Retries:** if Google still answers "too many requests" (HTTP 429) or with a server error, the script waits 65 seconds (long enough for Google's one-minute window to reset) and retries, up to 3 times.
 - **If a run stops partway:** worksheets not yet updated keep their previous data. The script lists the ones it finished and prints the exact `--only …` command to upload the rest.
-- **Upload log (`today` worksheet):** every run rewrites it with one row per table: `Table`, `Spreadsheet` (main or FSI), `Rows`, `Columns`, `Covers to` (latest period) and `Last updated`.
+- **Upload log (`today` worksheet):** every run rewrites it with one row per table: `Table`, `Spreadsheet` (main, FSI or Section 2), `Rows`, `Columns`, `Covers to` (latest period) and `Last updated`.
+  - The main sheet's log covers the main and FSI tables. The Section 2 sheet has its own `today` log, so a Section 2 upload doesn't change the dashboard's refresh date.
   - With `--only`, the rows of tables not uploaded keep their previous values. The uploaded rows get a new `Last updated`, so the sidebar's refresh time moves even if only one table changed.
   - It's written as plain text, so Sheets doesn't turn "Aug 2026" into a date.
   - The dashboard reads it for the sidebar's **Data last refreshed** time and for the sizes in its **Data pipeline** tab.
@@ -112,6 +122,10 @@ The main sheet also holds two worksheets you maintain by hand, which the uploade
 |---|---|---|
 | `SHEET_ID_MAIN is not set` | `.env` is missing or the value is empty | Fill it in `cfm_data/.env` |
 | `Service-account key file not found` | No `credential.json` in `cfm_data/` | Copy the key file there, or point `GOOGLE_CREDENTIALS_FILE` at it |
+| `Section 2: DATA not set in …` (or `AUTOMATION`) | A Section 2 source path is missing from `.env` | Add it to `cfm_data/.env` (names as in `.env.example`), or leave Section 2 out with `--only` |
+| `Section 2: the path in … doesn't exist` | A Section 2 path in `.env` is wrong, the `BOP & IIP data` folder is missing, or a file or folder was moved | Correct the path in `cfm_data/.env`, or put the workbooks back in `cfm_data/BOP & IIP data/` |
+| `Section 2: no SEACEN economy sheets found in …` | A workbook's sheets aren't named like `Korea (KR)`, or the names don't match `SEACEN_ECONOMIES` | Rename the sheets, or update `SEACEN_ECONOMIES` in `data_section_2.py` |
+| `FileNotFoundError: … IMF BOP Quarterly.xlsx` (or another workbook) | A compiled workbook is missing or renamed | Restore it in `BOP & IIP data` with its original name |
 | `APIError: [403] The caller does not have permission` | The sheet isn't shared with the service account | Share it with the key's `client_email` as Editor |
 | `APIError: [404] Requested entity was not found` | Wrong sheet ID | Copy the ID from the sheet's URL |
 | `APIError: [429]` after all retries | Something else is using the same Google account's quota at the same time (pacing normally prevents this) | Wait a minute, then run the `--only …` command the script printed |
@@ -127,13 +141,15 @@ Both workbooks sit in `cfm_data/`, next to `cfm_data.py`. The default paths are 
 ```
 cfm_data/
 ├── cfm_data.py
+├── data_section_2.py       # builds the Section 2 BoP / IIP tables
 ├── data download.py        # uploads the tables to Google Sheets
 ├── .env                    # private settings (git-ignored)
 ├── .env.example            # template for .env
 ├── credential.json         # Google service-account key (git-ignored, add yourself)
 ├── README.md
 ├── raw data for CFM.xlsx   # RAW_PATH
-└── 00 dlx.xlsx             # FSI_PATH
+├── 00 dlx.xlsx             # FSI_PATH
+└── BOP & IIP data/         # Section 2 workbooks (see Section 2 inputs below)
 ```
 
 | Constant | File | Sheets used |
@@ -153,6 +169,45 @@ The `Metadata` sheet in `raw data for CFM.xlsx` isn't read. Every sheet is read 
 | IIF (`iif.com`) | `capital_flows` | Monthly EM portfolio flows workbook |
 
 Everything is downloaded fresh on every run; nothing is cached.
+
+### Section 2 inputs
+
+**The BoP and IIP workbooks** sit in `cfm_data/BOP & IIP data/` (or the folder set in `IIPBOP` in `.env`). There are eight, one per dataset, each with **one sheet per economy**, named like `Korea (KR)`:
+
+| Workbook | Used by |
+|---|---|
+| `IMF BOP Quarterly.xlsx`, `IMF BOP Annual.xlsx` | `bop_quarterly()`, `bop_annual()` |
+| `IMF IIP Quarterly.xlsx`, `IMF IIP Annual.xlsx` | `iip_quarterly()`, `iip_annual()` |
+| `CB BOP Quarterly.xlsx`, `CB IIP Quarterly.xlsx` | `cb_bop_quarterly()`, `cb_iip_quarterly()`; the `Chinese Taipei (TW)` sheet of `CB BOP Quarterly.xlsx` also gives Chinese Taipei's quarterly BoP |
+| `CB BOP Annual.xlsx`, `CB IIP Annual.xlsx` | only their `Chinese Taipei (TW)` sheets: Chinese Taipei's annual BoP and its IIP |
+
+- **Reading:** `read_bop_iip("<workbook name>")` reads every economy sheet of a workbook and stacks them into one table.
+- **SEACEN only:** `remove_non_seacen()` keeps the sheets whose economy is in `SEACEN_ECONOMIES` (the 19 SEACEN economies, spelled as in the sheet names), so the non-SEACEN economies in the IMF workbooks (e.g. Brazil, the G7) are left out. Both functions take an `economies` list to use a different set.
+- **Gaps:** the IMF workbooks have no Chinese Taipei or Myanmar sheet.
+  - **Chinese Taipei** comes from the `Chinese Taipei (TW)` sheets of the central-bank workbooks, read by `read_taiwan()` (`TAIWAN_WORKBOOKS` in `data_section_2.py`): BoP from `CB BOP Quarterly` and `CB BOP Annual`, IIP from `CB IIP Annual`. There is no quarterly IIP for Chinese Taipei, so in the quarterly IIP tables each quarter shows that year's annual position.
+  - **Item names:** the items are matched to the `Taiwan BoP` and `Taiwan IIP` sheets of the mapping workbook. The annual BoP sheet adds a suffix like `(f7)` to each item and leaves the code off a few (`Services` for `Services (SV)`); `bop_annual()` allows for both.
+  - **Myanmar** has no data and appears as empty rows.
+- **Licensed data:** the workbooks are git-ignored, like every `.xlsx`.
+
+**The other sources** come from paths in `.env`, so they can live anywhere (for example on a shared drive):
+
+| Setting | What it points to |
+|---|---|
+| `DATA` | The workbook listing the central-bank BoP and IIP items to use (sheets `BOP` and `IIP`). |
+| `AUTOMATION` | The mapping workbook (sheets `BoP edit`, `IIP edit`, and `Taiwan BoP` and `Taiwan IIP`, which map the Chinese Taipei items). |
+| `IIPBOP` (optional) | Another folder holding the eight BoP and IIP workbooks, instead of `BOP & IIP data`. |
+
+**What it builds:** `main(year_use)` returns five tables, from `year_use` (default 2019, `--section2-year`) onwards. Each is uploaded to the worksheet of the same name:
+
+| Worksheet | Contents |
+|---|---|
+| `quarterly_type_half` | IIP and BoP by economy and item, by half-year (`1H2025`, `2H2025`) |
+| `quarterly_type_quarter` | IIP and BoP by economy and item, by quarter |
+| `quarterly_region_half` | IIP and BoP assets, liabilities and current account by regional group, by half-year |
+| `annual_type_full` | Annual IIP and BoP by economy and item |
+| `annual_region_full` | Annual IIP and BoP by regional group |
+
+The regional groups are Asia-Pacific (the 19 SEACEN economies), Asian Advanced Economies (labelled `Asian Advance Economies` in these tables), ASEAN5 Economies, Asian EDMEs, China and India.
 
 ## Functions and outputs
 

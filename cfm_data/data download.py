@@ -1,25 +1,32 @@
 """
-Uploads the Capital Flow Monitor tables (built by cfm_data.py) to Google Sheets.
+Uploads the Capital Flow Monitor tables (built by cfm_data.py) and the
+Section 2 BoP / IIP tables (built by data_section_2.py) to Google Sheets.
 
-Settings and secrets (sheet IDs, the service-account key file) come from the
-.env file in this folder; see .env.example and README.md.
+Settings and secrets (sheet IDs, the service-account key file, the Section 2
+source paths) come from the .env file in this folder; see .env.example and
+README.md.
 
     python "data download.py"                       # build and upload everything
     python "data download.py" --dry-run             # build only, show what would be uploaded
     python "data download.py" --only fx cds         # upload just these worksheets
     python "data download.py" --xlsx backup.xlsx    # also save every table to a local workbook
     python "data download.py" --cutoff 2026-09      # override the automatic FSI cutoff
+    python "data download.py" --section2-year 2019  # first year of the Section 2 tables
 
-Every upload also refreshes the "today" worksheet of the main sheet: one row
-per table with its size, the latest period it covers and when it was last
-uploaded. The dashboard shows the upload time in its sidebar and the sizes in
-its "Data pipeline" tab.
+Every upload also refreshes a "today" worksheet: one row per table with its
+size, the latest period it covers and when it was last uploaded. The main
+sheet's log covers the main and FSI tables (the dashboard shows the upload
+time in its sidebar and the sizes in its "Data pipeline" tab); the Section 2
+sheet gets its own log, so a Section 2 upload doesn't move the dashboard's
+refresh date.
 """
 
 import argparse
 import os
+import re
 import time
 from collections import deque
+from datetime import datetime
 from functools import cache
 from pathlib import Path
 
@@ -30,6 +37,7 @@ from google.oauth2.service_account import Credentials
 from gspread_dataframe import set_with_dataframe
 
 import cfm_data as cfm
+import data_section_2 as section2
 
 HERE = Path(__file__).resolve().parent
 load_dotenv(HERE / ".env")
@@ -43,9 +51,22 @@ REQUESTS_PER_MINUTE = 50
 # long enough for its one-minute window to reset, then try again.
 RETRIES = 4
 RETRY_WAIT_SECONDS = 65
-# The worksheet in the main sheet that records what was uploaded and when.
+# The worksheet that records what was uploaded and when.
 TODAY_SHEET = "today"
 TODAY_COLUMNS = ["Table", "Spreadsheet", "Rows", "Columns", "Covers to", "Last updated"]
+# Per spreadsheet (.env variable): its name in the upload log, and the
+# spreadsheet whose "today" worksheet logs it.
+SPREADSHEETS = {
+    "SHEET_ID_MAIN": ("main", "SHEET_ID_MAIN"),
+    "SHEET_ID_FSI": ("FSI", "SHEET_ID_MAIN"),
+    "SHEET_ID_SECTION2": ("Section 2", "SHEET_ID_SECTION2"),
+}
+# data_section_2.main() returns its tables in this order; they are uploaded to
+# worksheets of these names, which other apps read.
+SECTION2_WORKSHEETS = [
+    "quarterly_type_half", "quarterly_type_quarter", "quarterly_region_half",
+    "annual_type_full", "annual_region_full",
+]
 
 
 def _env(name: str, required: bool = True) -> str | None:
@@ -59,12 +80,16 @@ def _env(name: str, required: bool = True) -> str | None:
 # Which table goes to which worksheet
 # ---------------------------------------------------------------------------
 
-def build_worksheets(raw_path: Path, fsi_path: Path, cutoff: str) -> dict[str, dict]:
+def build_worksheets(raw_path: Path, fsi_path: Path, cutoff: str, section2_year: int) -> dict[str, dict]:
     """
     Worksheet layout of each Google Sheet: {sheet env var: {worksheet: builder}}.
     Builders run only when their worksheet is uploaded. The main sheet's
     worksheet names are the ones processed_data.py reads, so keep them.
     """
+
+    @cache
+    def sec2():
+        return section2.main(section2_year)
 
     @cache
     def fsi():
@@ -103,19 +128,25 @@ def build_worksheets(raw_path: Path, fsi_path: Path, cutoff: str) -> dict[str, d
             "garch": lambda: fsi()[4],
             "fsi_missing": lambda: cfm.fsi_missing_values(fsi_path, cutoff),
         },
+        "SHEET_ID_SECTION2": {
+            name: (lambda i=i: sec2()[i]) for i, name in enumerate(SECTION2_WORKSHEETS)
+        },
     }
 
 
 def covers_to(df: pd.DataFrame) -> str:
     """The latest period a table covers, as text ("Aug 2026", "3Q2026",
-    "2025-2027", ...), or "" for tables that aren't time series."""
+    "2H2025", "2025-2027", ...), or "" for tables that aren't time series."""
     if isinstance(df.index, pd.DatetimeIndex):
         return f"{df.index.max():%b %Y}"
     if "Date" in df.columns:
         return f"{pd.to_datetime(df['Date']).max():%b %Y}"
-    month_cols = [c for c in df.columns if isinstance(c, pd.Timestamp)]
+    month_cols = [c for c in df.columns if isinstance(c, datetime)]
     if month_cols:
         return f"{max(month_cols):%b %Y}"
+    half_cols = [str(c) for c in df.columns if re.fullmatch(r"[12]H\d{4}", str(c))]
+    if half_cols:
+        return max(half_cols, key=lambda h: (int(h[2:]), int(h[0])))
     if "Quarter" in df.columns:
         return max(df["Quarter"].astype(str), key=lambda q: (int(q[2:]), int(q[0])))
     if "TIME_PERIOD" in df.columns:
@@ -229,7 +260,7 @@ def connect() -> gspread.Client:
 
 
 def write_today(client: gspread.Client, sheet_id: str, meta: dict[str, dict]) -> pd.DataFrame:
-    """Refreshes the "today" worksheet of the main sheet with `meta`, keeping
+    """Refreshes the "today" worksheet of a spreadsheet with `meta`, keeping
     the earlier rows of tables not uploaded this run. Written as plain text
     so Sheets doesn't turn "Aug 2026" or the timestamps into dates."""
     spreadsheet = _with_retry(lambda: client.open_by_key(sheet_id), "opening the spreadsheet")
@@ -285,9 +316,12 @@ def main() -> None:
     parser.add_argument(
         "--cutoff", default=cfm.FSI_CUTOFF, help="last month of the FSI, e.g. 2026-08 (default: automatic)"
     )
+    parser.add_argument(
+        "--section2-year", type=int, default=2019, help="first year of the Section 2 BoP / IIP tables (default: 2019)"
+    )
     args = parser.parse_args()
 
-    layout = build_worksheets(args.raw, args.fsi, args.cutoff)
+    layout = build_worksheets(args.raw, args.fsi, args.cutoff, args.section2_year)
     all_names = [name for worksheets in layout.values() for name in worksheets]
     unknown = set(args.only or []) - set(all_names)
     if unknown:
@@ -296,28 +330,31 @@ def main() -> None:
     # Build every requested table first, so a data error stops the run before
     # anything in Google Sheets is touched.
     built = {}
-    meta = {}  # per table: size and latest period, for the "today" worksheet
+    # Per log spreadsheet, per table: size and latest period, for its "today" worksheet.
+    meta = {}
     now = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
     for env_var, worksheets in layout.items():
+        label, log_sheet = SPREADSHEETS[env_var]
         for name, builder in worksheets.items():
             if args.only and name not in args.only:
                 continue
             print(f"Building {name} ...")
             df = builder()
-            meta[name] = {
-                "Spreadsheet": "main" if env_var == "SHEET_ID_MAIN" else "FSI",
+            meta.setdefault(log_sheet, {})[name] = {
+                "Spreadsheet": label,
                 "Rows": df.shape[0], "Columns": df.shape[1], "Covers to": covers_to(df), "Last updated": now,
             }
             built.setdefault(env_var, {})[name] = to_sheet_frame(df)
-    if "fsi" in meta:
-        print(f"FSI cutoff: {meta['fsi']['Covers to']}" + (" (automatic)" if args.cutoff is None else ""))
+    all_meta = {name: m for log in meta.values() for name, m in log.items()}
+    if "fsi" in all_meta:
+        print(f"FSI cutoff: {all_meta['fsi']['Covers to']}" + (" (automatic)" if args.cutoff is None else ""))
 
     if args.xlsx:
         with pd.ExcelWriter(args.xlsx) as writer:
             for tables in built.values():
                 for name, df in tables.items():
                     df.to_excel(writer, sheet_name=name[:31], index=False)
-            today_frame(meta).to_excel(writer, sheet_name=TODAY_SHEET, index=False)
+            today_frame(all_meta).to_excel(writer, sheet_name=TODAY_SHEET, index=False)
         print(f"Saved {sum(len(t) for t in built.values())} tables to {args.xlsx}")
 
     if args.dry_run:
@@ -325,8 +362,9 @@ def main() -> None:
             print(f"\n{env_var} would receive:")
             for name, df in tables.items():
                 print(f"     {name:24} {df.shape[0]} rows x {df.shape[1]} cols")
-        print(f"\nSHEET_ID_MAIN would also get the '{TODAY_SHEET}' upload log:")
-        print(today_frame(meta).to_string(index=False))
+        for log_sheet, log in meta.items():
+            print(f"\n{log_sheet} would also get the '{TODAY_SHEET}' upload log:")
+            print(today_frame(log).to_string(index=False))
         return
 
     client = connect()
@@ -335,8 +373,9 @@ def main() -> None:
         for env_var, tables in built.items():
             print(f"\nUploading to {env_var}")
             upload(client, _env(env_var), tables, done)
-        print(f"\nUpdating the upload log in SHEET_ID_MAIN")
-        write_today(client, _env("SHEET_ID_MAIN"), meta)
+        for log_sheet, log in meta.items():
+            print(f"\nUpdating the upload log in {log_sheet}")
+            write_today(client, _env(log_sheet), log)
     except Exception:
         # Say exactly what's left, so the run can be finished with --only.
         remaining = [name for tables in built.values() for name in tables if name not in done]
