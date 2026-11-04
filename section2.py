@@ -144,14 +144,18 @@ def figure(df, segment, title):
         SEGMENTS[1]: ("Type", CATEGORY_COLORS),
         SEGMENTS[2]: ("Region", ECONOMY_COLORS),
     }[segment]
-    long = parts.melt(id_vars=[series], value_vars=periods, var_name="Period", value_name="Value")
+    # Blank values are dropped: Plotly restarts a stack from zero at a blank,
+    # so the series after it would be drawn over the ones before it.
+    long = parts.melt(id_vars=[series], value_vars=periods, var_name="Period", value_name="Value").dropna(
+        subset=["Value"]
+    )
     fig = px.bar(
         long,
         x="Period",
         y="Value",
         color=series,
         color_discrete_map=colors,
-        category_orders={"Period": periods},
+        category_orders={"Period": periods, series: list(parts[series])},
         barmode="relative",
         title=title,
     )

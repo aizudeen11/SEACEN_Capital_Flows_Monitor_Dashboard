@@ -9,6 +9,11 @@ What has changed in the SEACEN Capital Flow Monitor Dashboard, newest version fi
 
 The version shown in the dashboard's sidebar is read from the first entry below. To release a new version, add an entry at the top, in the same format (`## <version> — <date>`).
 
+## 2.1.1 — 4 November 2026
+
+### Fixed
+- **Capital Flows charts:** when one series had gaps (for example Mongolia before 2022 in FDI Assets by economy), the bars after it in the stack restarted from zero and were drawn over the others, so the bars fell short of the Total line. Gaps are now skipped, so the bars always add up to the total.
+
 ## 2.1.0 — 3 November 2026
 
 ### New
