@@ -10,7 +10,7 @@ A [Shiny for Python](https://shiny.posit.co/py/) dashboard that charts capital-f
 - **Capital flows (BoP and IIP):** balance of payments flows and international investment positions of the SEACEN economies, by regional group, category or economy.
 
 **Links:**
-- **Live app:** <https://ahmadaizudeen.shinyapps.io/seacen-cfm-dashboard/>
+- **Live app:** <https://aizudeenjapri.shinyapps.io/seacen-cfm-dashboard/>
 - **Source code:** <https://github.com/aizudeen11/SEACEN_Capital_Flows_Monitor_Dashboard>
 - **What's new:** [UPDATE.md](UPDATE.md) (the **Updates** tab in the dashboard) lists every version and its changes.
 - **Data pipeline:** [cfm_data/README.md](cfm_data/README.md) (the **Data pipeline** tab) explains how the data is built and uploaded.
@@ -282,7 +282,7 @@ The app is published on [shinyapps.io](https://www.shinyapps.io) with [rsconnect
    ```bash
    rsconnect add --account <ACCOUNT> --name shinyapps --token <TOKEN> --secret <SECRET>
    ```
-   The token is a password: don't commit it or paste it into files in the project.
+   The token is a password: don't commit it or paste it into files in the project. `--name` is a nickname for the account on your computer; each account you add needs its own (e.g. `shinyapps-team`), and the deploy command's `--name` picks which account to publish to.
 3. **Check locally first.** Run the app (see [Quick start](#quick-start)) and look over every card, the Excel download, the Capital Flows views and the tabs.
 4. **Empty `.cache/`.** Cached files uploaded with the app look freshly downloaded on the server, so it would serve your local copy for up to a day.
 5. **Deploy:**
@@ -296,6 +296,7 @@ The app is published on [shinyapps.io](https://www.shinyapps.io) with [rsconnect
    ```
    (In PowerShell, end each continued line with a backtick `` ` `` instead of `\`.)
    - **Which app is updated:** after the first deploy, `rsconnect-python/` remembers the app, so later deploys from the same computer update it. To create a separate app, add `--new` and choose another `--title`. To update an existing app from another computer, add `--app-id <id>` (shown on the app's page in shinyapps.io).
+   - **Moving to another account:** add the new account (step 2) with its own nickname, then deploy with that `--name` plus `--new`, so a new app is created there instead of updating the old one. The app's address becomes `https://<account>.shinyapps.io/<app name>/`; update the **Live app** link at the top of this page. The old app keeps running on the old account until you archive or delete it there, but no longer receives updates. Later deploys to the new account need only its `--name` (or `--app-id` from another computer).
    - **Python version:** shinyapps.io doesn't offer every Python version. `--override-python-version` asks for one it does offer, whatever version you run locally. Any version from 3.11 works with `requirements.txt`.
    - **Excludes:** the `--exclude` options keep the pipeline's secrets, raw workbooks and code, and local caches, off the server. Keep them on every deploy.
    - **Timing:** the upload takes a few minutes while shinyapps.io installs the packages. It prints the app's URL when it's done.
@@ -303,6 +304,7 @@ The app is published on [shinyapps.io](https://www.shinyapps.io) with [rsconnect
 7. **Instance settings (optional).** Under **Applications → (app) → Settings**:
    - **Instance idle timeout:** how long the app stays up without visitors. A shorter timeout means it restarts, and so reloads the Google Sheets, more often.
    - **Startup timeout:** raise it if the logs show the app being stopped while it downloads the sheets at startup.
+   - **Instance size (paid plans):** a larger instance gives the app more memory, which helps if the logs show it running out of memory while it loads the sheets or builds the Excel download. Paid plans also include more active hours per month than the free plan; usage is under **Account → Usage**.
 
 **What the server needs:** `main.py`, `section2.py`, `design.py`, `processed_data.py`, `excel_export.py`, `requirements.txt`, `README.md`, `UPDATE.md` and `cfm_data/README.md` (the three document tabs), the `www/` folder (favicon and navbar logo), plus `test (1).xlsx` as the offline fallback if you have it.
 

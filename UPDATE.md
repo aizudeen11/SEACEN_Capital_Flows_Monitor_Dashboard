@@ -9,6 +9,12 @@ What has changed in the SEACEN Capital Flow Monitor Dashboard, newest version fi
 
 The version shown in the dashboard's sidebar is read from the first entry below. To release a new version, add an entry at the top, in the same format (`## <version> — <date>`).
 
+## 2.1.2 — 11 November 2026
+
+### Changed
+- **New address:** the dashboard is now published at <https://aizudeenjapri.shinyapps.io/seacen-cfm-dashboard/>, on a paid shinyapps.io account. The previous address, <https://ahmadaizudeen.shinyapps.io/seacen-cfm-dashboard/>, still works for now but no longer receives updates.
+- **About tab (Deploying):** how to publish under another shinyapps.io account, and the instance settings of paid plans.
+
 ## 2.1.1 — 4 November 2026
 
 ### Fixed
