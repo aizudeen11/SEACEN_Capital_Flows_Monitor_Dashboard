@@ -86,12 +86,21 @@ def read_taiwan(dataset: str) -> pd.DataFrame:
     return pd.read_excel(path, sheet_name=sheets[0])
 
 
-def fill_to_latest_quarter(df: pd.DataFrame, label_cols: int = 4) -> pd.DataFrame:
+def _quarter_label(date) -> str:
+    """2026-06-01 -> "2Q2026"."""
+    return f"{(date.month - 1) // 3 + 1}Q{date.year}"
+
+
+IIP_MISSING_COLUMNS = ["Economy", "Item", "Last available", "Value used", "Quarters filled", "Count"]
+
+
+def fill_to_latest_quarter(df: pd.DataFrame, report: list | None = None, label_cols: int = 4) -> pd.DataFrame:
     """Carries each row's last value forward to the latest quarter any
     economy has data for, so an economy that hasn't reported the newest
     quarter yet (e.g. Cambodia's 2Q2026) shows its latest position instead
     of a gap. Gaps before a row's last value, and rows with no data at all,
-    are left alone. Prints each economy filled, and from which quarter."""
+    are left alone. Each filled row is added to `report` (columns
+    IIP_MISSING_COLUMNS), and each economy filled is printed."""
     periods = df.columns[label_cols:]
     values = df[periods].apply(pd.to_numeric, errors="coerce")
     with_data = values.notna().any()
@@ -104,9 +113,18 @@ def fill_to_latest_quarter(df: pd.DataFrame, label_cols: int = 4) -> pd.DataFram
         gap = [p for p in periods if last < p <= latest]
         df.loc[i, gap] = row[last]
         filled.setdefault((df.at[i, "Region"], last), []).append(df.at[i, "Type"])
+        if report is not None:
+            report.append({
+                "Economy": df.at[i, "Region"],
+                "Item": df.at[i, "Type"],
+                "Last available": _quarter_label(last),
+                "Value used": row[last],
+                "Quarters filled": ", ".join(_quarter_label(p) for p in gap),
+                "Count": len(gap),
+            })
     for (region, last), types in sorted(filled.items(), key=lambda kv: (str(kv[0][0]), kv[0][1])):
-        print(f"IIP quarterly: {region} carried forward from {(last.month - 1) // 3 + 1}Q{last.year} "
-              f"to {(latest.month - 1) // 3 + 1}Q{latest.year} ({len(types)} items)")
+        print(f"IIP quarterly: {region} carried forward from {_quarter_label(last)} "
+              f"to {_quarter_label(latest)} ({len(types)} items)")
     return df
 
 
@@ -441,7 +459,10 @@ def bop_annual(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     return df_all_annual_2, df_main
 
-def iip_quarterly(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def iip_quarterly(year_use:int = 2019, report: list | None = None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """The quarterly IIP tables: (by half-year, by quarter, by regional group).
+    Rows filled up to the latest quarter are added to `report` (see
+    fill_to_latest_quarter), with their items named as in the tables."""
     df_init = pd.read_excel(automation_path, sheet_name='IIP edit')
 
     df_all_annual = read_bop_iip('IMF IIP Quarterly')
@@ -489,7 +510,11 @@ def iip_quarterly(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame, pd.D
     df_all_annual_2.reset_index(drop=True, inplace=True)
 
     # positions are stocks, so an economy missing the newest quarter(s) keeps its latest position
-    df_all_annual_2 = fill_to_latest_quarter(df_all_annual_2)
+    filled = []
+    df_all_annual_2 = fill_to_latest_quarter(df_all_annual_2, filled)
+    if report is not None:
+        short_titles = dict(zip(df_init['desc'], df_init['short_title']))
+        report.extend({**row, "Item": short_titles.get(row["Item"], row["Item"])} for row in filled)
 
     init_dict = df_init.to_dict()
     df_dict = dict()
@@ -843,9 +868,13 @@ def to_combine_iipq(year_use:int = 2019):
     df_temp2.reset_index(drop=True, inplace=True)
     return df_temp2
 
-def main(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def main(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """The Section 2 tables: quarterly_type_half, quarterly_type_quarter,
+    quarterly_region_half, annual_type_full, annual_region_full and
+    iip_missing (the quarterly IIP rows filled up to the latest quarter)."""
     check_paths()
-    df1_1, df1_2, df1_3 = iip_quarterly(year_use)
+    iip_missing = []
+    df1_1, df1_2, df1_3 = iip_quarterly(year_use, iip_missing)
     df2_1, df2_2 = iip_annual(year_use)
     df3_1, df3_2, df3_3 = bop_quarterly(year_use)
     df4_1, df4_2 = bop_annual(year_use)
@@ -870,4 +899,8 @@ def main(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame,
     annual_region_full = pd.concat([df2_2, df4_2], axis=0)
     annual_region_full.drop(columns=['Last Update Time', 'Unit'], inplace=True)
 
-    return quarterly_type_half, quarterly_type_quarter, quarterly_region_half, annual_type_full, annual_region_full
+    # one block per economy, its items in the tables' order
+    iip_missing = pd.DataFrame(iip_missing, columns=IIP_MISSING_COLUMNS).sort_values("Economy", kind="stable")
+    iip_missing.reset_index(drop=True, inplace=True)
+
+    return quarterly_type_half, quarterly_type_quarter, quarterly_region_half, annual_type_full, annual_region_full, iip_missing

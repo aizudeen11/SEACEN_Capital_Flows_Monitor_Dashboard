@@ -13,6 +13,7 @@ The version shown in the dashboard's sidebar is read from the first entry below.
 
 ### New
 - **Capital Flows, quarterly IIP:** an economy that hasn't reported the latest quarter yet now keeps its latest position, instead of showing a gap and dropping out of the regional totals. For example, if Cambodia has data for 1Q2026 but not 2Q2026, its 2Q2026 position repeats 1Q2026. Chinese Taipei's latest annual position fills the quarters after it in the same way. The BoP flows are not filled.
+- **Data pipeline, `iip_missing`:** a new worksheet in the Section 2 sheet lists every quarterly IIP item that was filled: the economy, the item, its last quarter with data, the value used, the quarters filled and how many. It works like `fsi_missing` for the Financial Stress Indices.
 
 ### Changed
 - **New address:** the dashboard is now published at <https://aizudeenjapri.shinyapps.io/seacen-cfm-dashboard/>, on a paid shinyapps.io account. The previous address, <https://ahmadaizudeen.shinyapps.io/seacen-cfm-dashboard/>, still works for now but no longer receives updates.

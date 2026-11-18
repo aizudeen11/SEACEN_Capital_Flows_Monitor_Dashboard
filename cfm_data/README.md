@@ -76,7 +76,7 @@ python "data download.py" --only fx cds fsi          # upload only these workshe
 python "data download.py" --xlsx backup.xlsx         # also save every table to a local Excel file
 python "data download.py" --cutoff YYYY-MM           # override the automatic FSI cutoff
 python "data download.py" --section2-year 2019       # first year of the Section 2 tables (default 2019)
-python "data download.py" --only quarterly_type_half quarterly_type_quarter quarterly_region_half annual_type_full annual_region_full
+python "data download.py" --only quarterly_type_half quarterly_type_quarter quarterly_region_half annual_type_full annual_region_full iip_missing
                                                      # Section 2 only
 ```
 
@@ -88,7 +88,7 @@ A full run builds every table, Section 2 included, so it needs the Section 2 sou
 |---|---|
 | `SHEET_ID_MAIN` | `vix_data`, `policy_rate1`, `fx`, `cds`, `liquidity`, `gdp_growth`, `stock_price_index`, `sovereign_bond_yields`, `capital_flows`, `inflation_forecast`, `gdp_growth_forecast`, `cpi_yoy`, `cpi_yoy_3mma`, `today` (upload log, see below) |
 | `SHEET_ID_FSI` | `fsi`, `yield_data_calc`, `stock_data_calc2`, `empi`, `financial_sector_beta`, `garch`, `fsi_missing` |
-| `SHEET_ID_SECTION2` | `quarterly_type_half`, `quarterly_type_quarter`, `quarterly_region_half`, `annual_type_full`, `annual_region_full`, `today` (its own upload log) |
+| `SHEET_ID_SECTION2` | `quarterly_type_half`, `quarterly_type_quarter`, `quarterly_region_half`, `annual_type_full`, `annual_region_full`, `iip_missing`, `today` (its own upload log) |
 
 The worksheet names in `SHEET_ID_MAIN` are the ones `processed_data.py` reads. **Don't rename them** without changing the app too. The app builds its two policy-rate subsets from `policy_rate1`, so only the full table is uploaded. The Section 2 worksheet names are read by the dashboard's Capital Flows tab (`processed_data.dfs2()`) and by other applications, so keep those too, along with their column layout and names (the dashboard renames economies for its charts itself).
 
@@ -189,7 +189,7 @@ Everything is downloaded fresh on every run; nothing is cached.
   - **Myanmar** has no data and appears as empty rows.
 - **Latest quarter (quarterly IIP):** positions are stocks, so an economy that hasn't reported the latest quarter yet keeps its latest position. `fill_to_latest_quarter()` carries each item's last value forward to the latest quarter any economy has data for. For example, if Cambodia has 1Q2026 but not 2Q2026, its 2Q2026 repeats 1Q2026. Chinese Taipei's latest annual position fills the quarters after it in the same way. This fill also feeds the half-yearly and regional totals.
   - **What isn't filled:** gaps before an item's last value, economies with no data at all, and the BoP tables (flows aren't carried forward).
-  - **Check:** the run prints each economy it filled and from which quarter (e.g. `IIP quarterly: Cambodia carried forward from 1Q2026 to 2Q2026 (23 items)`).
+  - **Check:** the run prints each economy it filled and from which quarter (e.g. `IIP quarterly: Cambodia carried forward from 1Q2026 to 2Q2026 (23 items)`). The `iip_missing` worksheet lists every filled item, like `fsi_missing` for the FSI: `Economy`, `Item`, `Last available` (the last quarter with data), `Value used`, `Quarters filled` and `Count`. Check it before publishing.
 - **Licensed data:** the workbooks are git-ignored, like every `.xlsx`.
 
 **The other sources** come from paths in `.env`, so they can live anywhere (for example on a shared drive):
@@ -200,7 +200,7 @@ Everything is downloaded fresh on every run; nothing is cached.
 | `AUTOMATION` | The mapping workbook (sheets `BoP edit`, `IIP edit`, and `Taiwan BoP` and `Taiwan IIP`, which map the Chinese Taipei items). |
 | `IIPBOP` (optional) | Another folder holding the eight BoP and IIP workbooks, instead of `BOP & IIP data`. |
 
-**What it builds:** `main(year_use)` returns five tables, from `year_use` (default 2019, `--section2-year`) onwards. Each is uploaded to the worksheet of the same name:
+**What it builds:** `main(year_use)` returns six tables, from `year_use` (default 2019, `--section2-year`) onwards. Each is uploaded to the worksheet of the same name:
 
 | Worksheet | Contents |
 |---|---|
@@ -209,6 +209,7 @@ Everything is downloaded fresh on every run; nothing is cached.
 | `quarterly_region_half` | IIP and BoP assets, liabilities and current account by regional group, by half-year |
 | `annual_type_full` | Annual IIP and BoP by economy and item |
 | `annual_region_full` | Annual IIP and BoP by regional group |
+| `iip_missing` | Which quarterly IIP items were filled up to the latest quarter, and with what (see **Latest quarter** above) |
 
 The regional groups are Asia-Pacific (the 19 SEACEN economies), Asian Advanced Economies (labelled `Asian Advance Economies` in these tables), ASEAN5 Economies, Asian EDMEs, China and India.
 
