@@ -85,6 +85,31 @@ def read_taiwan(dataset: str) -> pd.DataFrame:
         raise SystemExit(f"Section 2: no Chinese Taipei sheet found in {path}")
     return pd.read_excel(path, sheet_name=sheets[0])
 
+
+def fill_to_latest_quarter(df: pd.DataFrame, label_cols: int = 4) -> pd.DataFrame:
+    """Carries each row's last value forward to the latest quarter any
+    economy has data for, so an economy that hasn't reported the newest
+    quarter yet (e.g. Cambodia's 2Q2026) shows its latest position instead
+    of a gap. Gaps before a row's last value, and rows with no data at all,
+    are left alone. Prints each economy filled, and from which quarter."""
+    periods = df.columns[label_cols:]
+    values = df[periods].apply(pd.to_numeric, errors="coerce")
+    with_data = values.notna().any()
+    latest = with_data[with_data].index.max()
+    filled = {}
+    for i, row in values.iterrows():
+        last = row.last_valid_index()
+        if last is None or last >= latest:
+            continue
+        gap = [p for p in periods if last < p <= latest]
+        df.loc[i, gap] = row[last]
+        filled.setdefault((df.at[i, "Region"], last), []).append(df.at[i, "Type"])
+    for (region, last), types in sorted(filled.items(), key=lambda kv: (str(kv[0][0]), kv[0][1])):
+        print(f"IIP quarterly: {region} carried forward from {(last.month - 1) // 3 + 1}Q{last.year} "
+              f"to {(latest.month - 1) // 3 + 1}Q{latest.year} ({len(types)} items)")
+    return df
+
+
 def bop_quarterly(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     df_init = pd.read_excel(automation_path, sheet_name='BoP edit')
 
@@ -463,12 +488,15 @@ def iip_quarterly(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame, pd.D
     df_all_annual_2.sort_values(by=['Type', 'Region'], inplace=True)
     df_all_annual_2.reset_index(drop=True, inplace=True)
 
+    # positions are stocks, so an economy missing the newest quarter(s) keeps its latest position
+    df_all_annual_2 = fill_to_latest_quarter(df_all_annual_2)
+
     init_dict = df_init.to_dict()
     df_dict = dict()
     for x in init_dict['desc'].values():
         df_temp = df_all_annual_2[(df_all_annual_2[df_all_annual_2.columns[0]] == x)].reset_index(drop=True)
         df_dict[x] = df_temp
-    
+
     df_temp_col_1 = df_all_annual_2.copy()
 
     # 1H = June, 2H = December

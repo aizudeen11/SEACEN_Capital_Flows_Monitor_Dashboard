@@ -9,11 +9,16 @@ What has changed in the SEACEN Capital Flow Monitor Dashboard, newest version fi
 
 The version shown in the dashboard's sidebar is read from the first entry below. To release a new version, add an entry at the top, in the same format (`## <version> — <date>`).
 
-## 2.1.2 — 11 November 2026
+## 2.2.0 — 18 November 2026
+
+### New
+- **Capital Flows, quarterly IIP:** an economy that hasn't reported the latest quarter yet now keeps its latest position, instead of showing a gap and dropping out of the regional totals. For example, if Cambodia has data for 1Q2026 but not 2Q2026, its 2Q2026 position repeats 1Q2026. Chinese Taipei's latest annual position fills the quarters after it in the same way. The BoP flows are not filled.
 
 ### Changed
 - **New address:** the dashboard is now published at <https://aizudeenjapri.shinyapps.io/seacen-cfm-dashboard/>, on a paid shinyapps.io account. The previous address, <https://ahmadaizudeen.shinyapps.io/seacen-cfm-dashboard/>, still works for now but no longer receives updates.
 - **About tab (Deploying):** how to publish under another shinyapps.io account, and the instance settings of paid plans.
+- **FSI cutoff:** the automatic cutoff of the Financial Stress Indices now follows the date of the data run, not the data: last month after the 7th of the month, otherwise the month before last (e.g. a run on 18 November covers up to October). Inputs without data for that month are carried forward and listed, as before. A month can still be set by hand with `--cutoff YYYY-MM`.
+- **About tab (Updating the data) and Data pipeline tab:** after a data upload, wait about 5 minutes for Google to republish the sheets, then restart the app on shinyapps.io (**Applications → (the app) → Restart**) so the live dashboard shows the new data.
 
 ## 2.1.1 — 4 November 2026
 

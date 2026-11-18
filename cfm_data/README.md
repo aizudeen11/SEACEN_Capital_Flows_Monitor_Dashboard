@@ -129,7 +129,7 @@ The main sheet also holds two worksheets you maintain by hand, which the uploade
 | `APIError: [403] The caller does not have permission` | The sheet isn't shared with the service account | Share it with the key's `client_email` as Editor |
 | `APIError: [404] Requested entity was not found` | Wrong sheet ID | Copy the ID from the sheet's URL |
 | `APIError: [429]` after all retries | Something else is using the same Google account's quota at the same time (pacing normally prevents this) | Wait a minute, then run the `--only …` command the script printed |
-| Dashboard still shows old data | The app downloads the *published* sheets and caches them for a day in the project's `.cache/` folder; it also reads them only when it starts | Wait a day, or delete the files in `.cache/` and restart the app |
+| Dashboard still shows old data | The app downloads the *published* sheets and caches them for a day in the project's `.cache/` folder; it also reads them only when it starts. Google also takes a few minutes to update a published sheet after an upload | Wait about 5 minutes after the upload, then restart the app. **Live app:** on shinyapps.io, **Applications → (the app) → Restart**; if it still shows old data, redeploy with an empty `.cache/` or wait a day. **Locally:** delete the files in `.cache/` and restart the app |
 | Dashboard shows "unknown" refresh date | The main sheet couldn't be downloaded, so the app fell back to `test (1).xlsx` | Check the internet connection and that the main sheet is still published to the web |
 
 ## Inputs
@@ -187,6 +187,9 @@ Everything is downloaded fresh on every run; nothing is cached.
   - **Chinese Taipei** comes from the `Chinese Taipei (TW)` sheets of the central-bank workbooks, read by `read_taiwan()` (`TAIWAN_WORKBOOKS` in `data_section_2.py`): BoP from `CB BOP Quarterly` and `CB BOP Annual`, IIP from `CB IIP Annual`. There is no quarterly IIP for Chinese Taipei, so in the quarterly IIP tables each quarter shows that year's annual position.
   - **Item names:** the items are matched to the `Taiwan BoP` and `Taiwan IIP` sheets of the mapping workbook. The annual BoP sheet adds a suffix like `(f7)` to each item and leaves the code off a few (`Services` for `Services (SV)`); `bop_annual()` allows for both.
   - **Myanmar** has no data and appears as empty rows.
+- **Latest quarter (quarterly IIP):** positions are stocks, so an economy that hasn't reported the latest quarter yet keeps its latest position. `fill_to_latest_quarter()` carries each item's last value forward to the latest quarter any economy has data for. For example, if Cambodia has 1Q2026 but not 2Q2026, its 2Q2026 repeats 1Q2026. Chinese Taipei's latest annual position fills the quarters after it in the same way. This fill also feeds the half-yearly and regional totals.
+  - **What isn't filled:** gaps before an item's last value, economies with no data at all, and the BoP tables (flows aren't carried forward).
+  - **Check:** the run prints each economy it filled and from which quarter (e.g. `IIP quarterly: Cambodia carried forward from 1Q2026 to 2Q2026 (23 items)`).
 - **Licensed data:** the workbooks are git-ignored, like every `.xlsx`.
 
 **The other sources** come from paths in `.env`, so they can live anywhere (for example on a shared drive):
@@ -286,9 +289,11 @@ For each economy, the FSI adds up five standardised components:
 
 **Cutoff:** every input is cut at the cutoff month. Any series that stops before it is filled forward with its last value, and `fsi_missing_values()` lists each series filled that way.
 
-- **Automatic by default** (`FSI_CUTOFF = None`, see `fsi_auto_cutoff()`). The cutoff is the latest month for which **every market input** (10-year yields, stock indices, financial-sector indices, FX) has data.
-- **Allowed to lag:** reserves (ORA) don't hold the cutoff back; they're carried forward and reported.
-- **Stale series:** a market series more than `FSI_STALE_MONTHS` (12) months behind the newest one (e.g. the Thai market caps that stopped in Jul 2023) is treated as stale. It's ignored when choosing the cutoff, then carried forward and reported.
+- **Automatic by default** (`FSI_CUTOFF = None`, see `fsi_auto_cutoff()`). The cutoff follows the date of the run, not the data:
+  - **After the 7th of the month:** last month. For example, a run on 18 November covers up to October.
+  - **On or before the 7th:** the month before last. For example, a run on 7 November covers up to September.
+  - The day is `FSI_CUTOFF_DAY` (7).
+- **Inputs that lag:** any input without data for the cutoff month (e.g. reserves (ORA), or the Thai market caps that stopped in Jul 2023) is carried forward and reported. Check `fsi_missing` after each run.
 - **Latest upload:** the cutoff was **<!--live:fsi:covers-->Aug 2026<!--/live-->**. The run prints the cutoff it chose and the inputs it carried forward; `fsi_missing` keeps the same list.
 - **Override:** to force a month, set `FSI_CUTOFF = "YYYY-MM"` or pass `--cutoff YYYY-MM`.
 
@@ -315,7 +320,7 @@ These constants at the top of each section control the output:
 | Constant | Now | When to change |
 |---|---|---|
 | `FSI_CUTOFF` | `None` (automatic; latest upload: <!--live:fsi:covers-->Aug 2026<!--/live-->) | Only to override the automatic cutoff (or pass `--cutoff`) |
-| `FSI_STALE_MONTHS` | 12 | How far behind a market series can be before it no longer holds back the automatic cutoff |
+| `FSI_CUTOFF_DAY` | 7 | Day of the month after which the automatic cutoff moves to last month (up to this day it's the month before last) |
 | `GDP_FIRST_YEAR` | 2022 | First year of quarterly GDP growth |
 | `FX_FIRST_YEAR`, `STOCK_FIRST_YEAR`, `YIELDS_FIRST_YEAR` | 2020, 2020, 2021 | First year of the yearly-change tables |
 | `POLICY_START` | 2022-01-01 | First month of the policy rate tables |

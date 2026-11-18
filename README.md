@@ -220,6 +220,8 @@ The positions matter: `main.py` uses `all_df[i]` by number. **Add new tables at 
   - renames economies and groups for the charts (`SECTION2_NAMES`: Taiwan → Chinese Taipei, Hong Kong SAR (China) → Hong Kong, Asian Advance Economies → Asian Advanced Economies), keeping the sheet's spellings unchanged for other applications;
   - labels quarters like `2Q2026`.
   
+  In the quarterly IIP, an economy that hasn't reported the latest quarter yet shows its latest available position for that quarter (filled by the pipeline; see [cfm_data/README.md](cfm_data/README.md#section-2-inputs)).
+
   If the sheet can't be downloaded and there's no cached copy, the Capital Flows tab shows a message and the rest of the dashboard still works.
 - **Loader functions.** `dfs()` is a development loader that reads a local `test.xlsx` and `financial stress index.xlsx` instead of the Google Sheets. To use it, change `all_df = dfs1()` to `dfs()` in `main.py`.
 - **When data is read.** Both loaders run once, when the app starts. Downloads are also cached on disk in `.cache/` for a day; if a download fails, the last cached copy is used.
@@ -249,7 +251,7 @@ The positions matter: `main.py` uses `all_df[i]` by number. **Add new tables at 
 The full data-refresh process is in [cfm_data/README.md](cfm_data/README.md). In short, with the virtual environment active:
 
 1. **Refresh the source workbooks.** Refresh `cfm_data/raw data for CFM.xlsx` and `cfm_data/00 dlx.xlsx` from CEIC/Haver/FocusEconomics.
-2. **FSI cutoff (automatic).** The FSI runs to the latest month for which every market input (yields, stock indices, FX) has data. Reserves (ORA) may lag and are carried forward. The run prints the month it chose. To force a different month, pass `--cutoff YYYY-MM` or set `FSI_CUTOFF` in `cfm_data/cfm_data.py`.
+2. **FSI cutoff (automatic).** The FSI runs to last month if you run it after the 7th of the month, otherwise to the month before last (e.g. 18 November → October, 7 November → September). Any input without data for that month (e.g. reserves, ORA) is carried forward and reported. The run prints the month it chose. To force a different month, pass `--cutoff YYYY-MM` or set `FSI_CUTOFF` in `cfm_data/cfm_data.py`.
 3. **Build and upload.**
    ```bash
    cd cfm_data
@@ -261,10 +263,10 @@ The full data-refresh process is in [cfm_data/README.md](cfm_data/README.md). In
    - **Timing:** the upload is paced to stay under Google's request limit, so it takes a couple of minutes.
    - **The upload log:** it also refreshes the `today` worksheet, which drives the sidebar date and the live values in the **Data pipeline** tab.
    - **If it stops partway:** run the `--only …` command it prints.
-4. **Let the app pick it up.** The app reads the published sheets when it starts and keeps a copy for a day.
+4. **Let the app pick it up.** The app reads the published sheets only when it starts and keeps a copy for a day, so a running app goes on showing the old data until it restarts.
+   - **Wait about 5 minutes after the upload.** Google takes a few minutes to update the published copy of a sheet after an upload or edit. In each sheet, **File → Share → Publish to web** should have **Automatically republish when changes are made** ticked.
+   - **On shinyapps.io:** go to **Applications → (the app)** and click **Restart**. A restart normally starts a fresh copy of the app without the old downloads, so it fetches the new sheets. An idle app also stops by itself and restarts on the next visit. If a restart still shows the old data, the server's cached copy is less than a day old: redeploy with an empty `.cache/`, or wait for it to expire.
    - **Locally:** delete the files in `.cache/` and restart the app.
-   - **On shinyapps.io:** click **Restart** on the app's page. An idle app also stops by itself and restarts on the next visit. If a restart still shows the old data, the server's cached copy is less than a day old: redeploy, or wait for it to expire.
-   - **Published copy:** Google can take a few minutes to update a published sheet after an upload or edit. In the sheet, **File → Share → Publish to web** should have **Automatically republish when changes are made** ticked.
    - **Check:** the sidebar's **Data last refreshed** shows the upload time.
    - **Required sheets:** the main sheet must contain every sheet the app reads: `vix_data`, `policy_rate1`, `fx`, `cds`, `liquidity`, `gdp_growth`, `stock_price_index`, `sovereign_bond_yields`, `capital_flows`, `economics_event`, `gdp_growth_forecast`, `inflation_forecast` and `cpi_yoy_3mma`. A missing sheet stops the app at startup. `today` (upload log) and `to_show` (display switches) are optional.
    - **Offline copy (optional):** download the main sheet as `.xlsx` (File → Download → Microsoft Excel) and save it as `test (1).xlsx`, the app's fallback when Google can't be reached.

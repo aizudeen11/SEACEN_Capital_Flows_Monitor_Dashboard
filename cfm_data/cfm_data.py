@@ -415,15 +415,16 @@ def capital_flows(url: str = IIF_FLOWS_URL) -> pd.DataFrame:
 # Financial Stress Index
 # ---------------------------------------------------------------------------
 
-# Last month the FSI covers. None = automatic (fsi_auto_cutoff): the latest
-# month every market input has data. Set a month such as "2026-08" (or pass
-# --cutoff) to override. Any input series that stops before the cutoff is
-# filled with its latest value; fsi_missing_values() lists what was filled.
+# Last month the FSI covers. None = automatic (fsi_auto_cutoff): last month,
+# or the month before that until the FSI_CUTOFF_DAY-th. Set a month such as
+# "2026-08" (or pass --cutoff) to override. Any input series that stops before
+# the cutoff is filled with its latest value; fsi_missing_values() lists what
+# was filled.
 FSI_CUTOFF = None
-# For the automatic cutoff, a market series this many months behind the newest
-# one counts as stale (e.g. the Thai market caps that stopped in Jul 2023) and
-# doesn't hold the cutoff back; it is still filled and reported.
-FSI_STALE_MONTHS = 12
+# For the automatic cutoff: after this day of the month, last month's data is
+# taken to be in (cutoff = last month); up to and including it, the cutoff is
+# the month before (e.g. 18 Nov -> Oct, 7 Nov -> Sep).
+FSI_CUTOFF_DAY = 7
 
 FSI_STOCK_KEYS = {
     'Select this link and click Refresh/Edit Download to update data and add or remove series': 'Date',
@@ -495,20 +496,19 @@ def _fill_to_cutoff(df, cutoff, sheet, report, labels=None, skip=()):
     return df
 
 
-# How each FSI input is labelled in the fill report, which of its columns are
-# never filled, and whether it can hold back the automatic cutoff (ORA, the
-# reserves data, is allowed to lag and is carried forward instead).
+# How each FSI input is labelled in the fill report, and which of its columns
+# are never filled.
 _FSI_INPUTS = {
-    "yields1": ("00 dlx (10Y yield)", {}, (), True),
-    "yields2": ("Yields2 (10Y yield)", {}, (), True),
-    "stocks": ("Stock Price Indexes", {v: k for k, v in FSI_STOCK_KEYS.items()}, (), True),
+    "yields1": ("00 dlx (10Y yield)", {}, ()),
+    "yields2": ("Yields2 (10Y yield)", {}, ()),
+    "stocks": ("Stock Price Indexes", {v: k for k, v in FSI_STOCK_KEYS.items()}, ()),
     # Indonesia1 is the discontinued (DC) index; the switch to Indonesia2
     # relies on it staying empty after it stops, so it is never filled.
     "financials": (
-        "Stock Price Indexes (financials)", {v: k for k, v in FSI_FINANCIAL_KEYS.items()}, ("Indonesia1",), True,
+        "Stock Price Indexes (financials)", {v: k for k, v in FSI_FINANCIAL_KEYS.items()}, ("Indonesia1",),
     ),
-    "fx": ("FX", {}, (), True),
-    "ora": ("ORA", {}, (), False),
+    "fx": ("FX", {}, ()),
+    "ora": ("ORA", {}, ()),
 }
 
 
@@ -571,24 +571,15 @@ def _read_fsi_inputs(path: Path = FSI_PATH) -> dict[str, pd.DataFrame]:
     }
 
 
-def fsi_auto_cutoff(path: Path = FSI_PATH, inputs: dict | None = None) -> pd.Timestamp:
+def fsi_auto_cutoff(today: pd.Timestamp | None = None) -> pd.Timestamp:
     """
-    The automatic FSI cutoff: the latest month for which every market input
-    (yields, stock and financial-sector indices, FX) has data. ORA may lag and
-    is carried forward instead; series more than FSI_STALE_MONTHS behind the
-    newest one (stale or discontinued) are ignored.
+    The automatic FSI cutoff (month end), from today's date: last month after
+    the FSI_CUTOFF_DAY-th of the month, otherwise the month before it
+    (18 Nov -> Oct, 7 Nov -> Sep).
     """
-    inputs = inputs if inputs is not None else _read_fsi_inputs(path)
-    lasts = []
-    for key, (_, _, skip, sets_cutoff) in _FSI_INPUTS.items():
-        if not sets_cutoff:
-            continue
-        for col, series in inputs[key].items():
-            last = series.last_valid_index()
-            if col not in skip and last is not None:
-                lasts.append(last)
-    newest = max(lasts)
-    return min(d for d in lasts if d > newest - pd.DateOffset(months=FSI_STALE_MONTHS))
+    today = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today)
+    months_back = 1 if today.day > FSI_CUTOFF_DAY else 2
+    return today - pd.offsets.MonthEnd(months_back)
 
 
 def _load_fsi_inputs(path: Path = FSI_PATH, cutoff: str | None = FSI_CUTOFF):
@@ -599,12 +590,12 @@ def _load_fsi_inputs(path: Path = FSI_PATH, cutoff: str | None = FSI_CUTOFF):
     """
     inputs = _read_fsi_inputs(path)
     if cutoff is None:
-        cutoff = fsi_auto_cutoff(path, inputs)
+        cutoff = fsi_auto_cutoff()
     cutoff = pd.Timestamp(cutoff) + pd.offsets.MonthEnd(0)
 
     report = []
     filled = {}
-    for key, (sheet, labels, skip, _) in _FSI_INPUTS.items():
+    for key, (sheet, labels, skip) in _FSI_INPUTS.items():
         filled[key] = _fill_to_cutoff(inputs[key], cutoff, sheet, report, labels=labels, skip=skip)
 
     report = pd.DataFrame(report, columns=["Sheet", "Series", "Last available", "Value used", "Months filled", "Count"])
