@@ -295,14 +295,26 @@ The app is published on [shinyapps.io](https://www.shinyapps.io) with [rsconnect
        --override-python-version 3.12.2 \
        --exclude "cfm_data/.env" --exclude "cfm_data/*.xlsx" --exclude "cfm_data/*.json" \
        --exclude "cfm_data/*.ipynb" --exclude "cfm_data/*.py" --exclude "cfm_data/requirements.txt" \
-       --exclude "cfm_data/BOP & IIP data/*" \
-       --exclude ".cache/*" --exclude ".claude/*" --exclude ".venv/*"
+       --exclude "cfm_data/BOP & IIP data/*" --exclude "cfm_data/__pycache__" --exclude "cfm_data/rsconnect-python" \
+       --exclude ".cache/*" --exclude ".claude/*" --exclude ".venv/*" --exclude "reference/*"
    ```
    (In PowerShell, end each continued line with a backtick `` ` `` instead of `\`.)
+
+   **On Windows, don't run that command as it is.** rsconnect's command line expands wildcards itself on Windows, even inside quotes: `--exclude "cfm_data/*.xlsx"` excludes only the *first* matching file, and the other matches are read as extra files to **upload**. With the excludes above, that would upload the raw workbooks and most of the licensed `BOP & IIP data` workbooks. Run it through Python with the expansion turned off instead (PowerShell, from the project folder, with the virtual environment active):
+   ```powershell
+   python -c "import sys; from rsconnect.main import cli; cli.main(args=sys.argv[1:], prog_name='rsconnect', windows_expand_args=False)" `
+       deploy shiny . --name shinyapps --entrypoint main:app --title SEACEN-CFM-Dashboard `
+       --override-python-version 3.12.2 `
+       --exclude "cfm_data/.env" --exclude "cfm_data/*.xlsx" --exclude "cfm_data/*.json" `
+       --exclude "cfm_data/*.ipynb" --exclude "cfm_data/*.py" --exclude "cfm_data/requirements.txt" `
+       --exclude "cfm_data/BOP & IIP data/*" --exclude "cfm_data/__pycache__" --exclude "cfm_data/rsconnect-python" `
+       --exclude ".cache/*" --exclude ".claude/*" --exclude ".venv/*" --exclude "reference/*"
+   ```
+   To check what will be uploaded before deploying, list the files rsconnect would bundle with the same excludes: `python -c "from rsconnect.bundle import create_file_list; print(*create_file_list('.', [], ['cfm_data/.env', 'cfm_data/*.xlsx', 'cfm_data/*.json', 'cfm_data/*.ipynb', 'cfm_data/*.py', 'cfm_data/requirements.txt', 'cfm_data/BOP & IIP data/*', 'cfm_data/__pycache__', 'cfm_data/rsconnect-python', '.cache/*', '.claude/*', '.venv/*', 'reference/*']), sep='\n')"`. Only the app's own files should be listed, plus `test (1).xlsx` (the app's fallback snapshot).
    - **Which app is updated:** after the first deploy, `rsconnect-python/` remembers the app, so later deploys from the same computer update it. To create a separate app, add `--new` and choose another `--title`. To update an existing app from another computer, add `--app-id <id>` (shown on the app's page in shinyapps.io).
    - **Moving to another account:** add the new account (step 2) with its own nickname, then deploy with that `--name` plus `--new`, so a new app is created there instead of updating the old one. The app's address becomes `https://<account>.shinyapps.io/<app name>/`; update the **Live app** link at the top of this page. The old app keeps running on the old account until you archive or delete it there, but no longer receives updates. Later deploys to the new account need only its `--name` (or `--app-id` from another computer).
    - **Python version:** shinyapps.io doesn't offer every Python version. `--override-python-version` asks for one it does offer, whatever version you run locally. Any version from 3.11 works with `requirements.txt`.
-   - **Excludes:** the `--exclude` options keep the pipeline's secrets, raw workbooks and code, and local caches, off the server. Keep them on every deploy.
+   - **Excludes:** the `--exclude` options keep the pipeline's secrets, raw workbooks and code, local caches and report files (`reference/`) off the server. Keep them on every deploy, and on Windows use the Python form above so they work.
    - **Timing:** the upload takes a few minutes while shinyapps.io installs the packages. It prints the app's URL when it's done.
 6. **Check the live app.** Open the URL and check the sidebar's **Data last refreshed** date and version, a few charts and the Excel download. If it doesn't start, the error is under **Applications → (app) → Logs** on shinyapps.io.
 7. **Instance settings (optional).** Under **Applications → (app) → Settings**:
