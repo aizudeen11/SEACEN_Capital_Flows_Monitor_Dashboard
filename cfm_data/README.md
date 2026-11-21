@@ -76,7 +76,7 @@ python "data download.py" --only fx cds fsi          # upload only these workshe
 python "data download.py" --xlsx backup.xlsx         # also save every table to a local Excel file
 python "data download.py" --cutoff YYYY-MM           # override the automatic FSI cutoff
 python "data download.py" --section2-year 2019       # first year of the Section 2 tables (default 2019)
-python "data download.py" --only quarterly_type_half quarterly_type_quarter quarterly_region_half annual_type_full annual_region_full iip_missing
+python "data download.py" --only quarterly_type_half quarterly_type_quarter quarterly_region_half annual_type_full annual_region_full iip_missing cb_filled
                                                      # Section 2 only
 ```
 
@@ -88,7 +88,7 @@ A full run builds every table, Section 2 included, so it needs the Section 2 sou
 |---|---|
 | `SHEET_ID_MAIN` | `vix_data`, `policy_rate1`, `fx`, `cds`, `liquidity`, `gdp_growth`, `stock_price_index`, `sovereign_bond_yields`, `capital_flows`, `inflation_forecast`, `gdp_growth_forecast`, `cpi_yoy`, `cpi_yoy_3mma`, `today` (upload log, see below) |
 | `SHEET_ID_FSI` | `fsi`, `yield_data_calc`, `stock_data_calc2`, `empi`, `financial_sector_beta`, `garch`, `fsi_missing` |
-| `SHEET_ID_SECTION2` | `quarterly_type_half`, `quarterly_type_quarter`, `quarterly_region_half`, `annual_type_full`, `annual_region_full`, `iip_missing`, `today` (its own upload log) |
+| `SHEET_ID_SECTION2` | `quarterly_type_half`, `quarterly_type_quarter`, `quarterly_region_half`, `annual_type_full`, `annual_region_full`, `iip_missing`, `cb_filled`, `today` (its own upload log) |
 
 The worksheet names in `SHEET_ID_MAIN` are the ones `processed_data.py` reads. **Don't rename them** without changing the app too. The app builds its two policy-rate subsets from `policy_rate1`, so only the full table is uploaded. The Section 2 worksheet names are read by the dashboard's Capital Flows tab (`processed_data.dfs2()`) and by other applications, so keep those too, along with their column layout and names (the dashboard renames economies for its charts itself).
 
@@ -178,7 +178,7 @@ Everything is downloaded fresh on every run; nothing is cached.
 |---|---|
 | `IMF BOP Quarterly.xlsx`, `IMF BOP Annual.xlsx` | `bop_quarterly()`, `bop_annual()` |
 | `IMF IIP Quarterly.xlsx`, `IMF IIP Annual.xlsx` | `iip_quarterly()`, `iip_annual()` |
-| `CB BOP Quarterly.xlsx`, `CB IIP Quarterly.xlsx` | `cb_bop_quarterly()`, `cb_iip_quarterly()`; the `Chinese Taipei (TW)` sheet of `CB BOP Quarterly.xlsx` also gives Chinese Taipei's quarterly BoP |
+| `CB BOP Quarterly.xlsx`, `CB IIP Quarterly.xlsx` | `cb_bop_quarterly()`, `cb_iip_quarterly()`, which fill blanks in the IMF quarterly data (see **Central-bank fill** below); the `Chinese Taipei (TW)` sheet of `CB BOP Quarterly.xlsx` also gives Chinese Taipei's quarterly BoP |
 | `CB BOP Annual.xlsx`, `CB IIP Annual.xlsx` | only their `Chinese Taipei (TW)` sheets: Chinese Taipei's annual BoP and its IIP |
 
 - **Reading:** `read_bop_iip("<workbook name>")` reads every economy sheet of a workbook and stacks them into one table.
@@ -187,7 +187,11 @@ Everything is downloaded fresh on every run; nothing is cached.
   - **Chinese Taipei** comes from the `Chinese Taipei (TW)` sheets of the central-bank workbooks, read by `read_taiwan()` (`TAIWAN_WORKBOOKS` in `data_section_2.py`): BoP from `CB BOP Quarterly` and `CB BOP Annual`, IIP from `CB IIP Annual`. There is no quarterly IIP for Chinese Taipei, so in the quarterly IIP tables each quarter shows that year's annual position.
   - **Item names:** the items are matched to the `Taiwan BoP` and `Taiwan IIP` sheets of the mapping workbook. The annual BoP sheet adds a suffix like `(f7)` to each item and leaves the code off a few (`Services` for `Services (SV)`); `bop_annual()` allows for both.
   - **Myanmar** has no data and appears as empty rows.
-- **Latest quarter (quarterly IIP):** positions are stocks, so an economy that hasn't reported the latest quarter yet keeps its latest position. `fill_to_latest_quarter()` carries each item's last value forward to the latest quarter any economy has data for. For example, if Cambodia has 1Q2026 but not 2Q2026, its 2Q2026 repeats 1Q2026. Chinese Taipei's latest annual position fills the quarters after it in the same way. This fill also feeds the half-yearly and regional totals.
+- **Central-bank fill (quarterly BoP and IIP):** `fill_from_central_bank()` fills blank cells in the IMF quarterly tables from the central-bank workbooks (the items listed in the `DATA` workbook), matching the same economy, item and quarter. It runs first, before the half-year sums and the carry-forward below.
+  - **Only blanks:** an IMF value is never replaced, and quarters the IMF table doesn't have aren't added.
+  - **Signs:** some central banks record BoP assets with the opposite sign to the IMF (e.g. Cambodia, Malaysia and Vietnam). For each economy and side (assets, liabilities, current account), the quarters where both sources have a value decide: if at least 90% agree in sign (`CB_SIGN_AGREEMENT`) the values are used as they are; if at least 90% disagree they're reversed; otherwise, or with fewer than 8 such quarters (`CB_MIN_OVERLAP`), that side isn't filled.
+  - **Check:** the run prints each economy filled (e.g. `IIP quarterly: Sri Lanka filled from its central bank (9 items)`). The `cb_filled` worksheet lists every item with blanks the central bank has values for: `Dataset`, `Economy`, `Item`, `Quarters`, `Count` and `Sign` (`as reported`, `reversed`, or not filled). Some central banks report 0 where the IMF is blank, so a filled cell can be a zero.
+  - **Half-years:** a fill doesn't always reach a half-year: if the other quarter of that half is still blank, the half-year stays blank (see **Half-years (BoP)** below).- **Latest quarter (quarterly IIP):** positions are stocks, so an economy that hasn't reported the latest quarter yet keeps its latest position. `fill_to_latest_quarter()` carries each item's last value forward to the latest quarter any economy has data for. For example, if Cambodia has 1Q2026 but not 2Q2026, its 2Q2026 repeats 1Q2026. Chinese Taipei's latest annual position fills the quarters after it in the same way. This fill also feeds the half-yearly and regional totals.
   - **What isn't filled:** gaps before an item's last value, economies with no data at all, and the BoP tables (flows aren't carried forward).
   - **Check:** the run prints each economy it filled and from which quarter (e.g. `IIP quarterly: Cambodia carried forward from 1Q2026 to 2Q2026 (23 items)`). The `iip_missing` worksheet lists every filled item, like `fsi_missing` for the FSI: `Economy`, `Item`, `Last available` (the last quarter with data), `Value used`, `Quarters filled` and `Count`. Check it before publishing.
 - **Licensed data:** the workbooks are git-ignored, like every `.xlsx`.
@@ -200,7 +204,7 @@ Everything is downloaded fresh on every run; nothing is cached.
 | `AUTOMATION` | The mapping workbook (sheets `BoP edit`, `IIP edit`, and `Taiwan BoP` and `Taiwan IIP`, which map the Chinese Taipei items). |
 | `IIPBOP` (optional) | Another folder holding the eight BoP and IIP workbooks, instead of `BOP & IIP data`. |
 
-**What it builds:** `main(year_use)` returns six tables, from `year_use` (default 2019, `--section2-year`) onwards. Each is uploaded to the worksheet of the same name:
+**What it builds:** `main(year_use)` returns seven tables, from `year_use` (default 2019, `--section2-year`) onwards. Each is uploaded to the worksheet of the same name:
 
 | Worksheet | Contents |
 |---|---|
@@ -210,8 +214,21 @@ Everything is downloaded fresh on every run; nothing is cached.
 | `annual_type_full` | Annual IIP and BoP by economy and item |
 | `annual_region_full` | Annual IIP and BoP by regional group |
 | `iip_missing` | Which quarterly IIP items were filled up to the latest quarter, and with what (see **Latest quarter** above) |
+| `cb_filled` | Which quarterly BoP and IIP blanks were filled from the central-bank workbooks, and with which sign (see **Central-bank fill** above) |
 
-The regional groups are Asia-Pacific (the 19 SEACEN economies), Asian Advanced Economies (labelled `Asian Advance Economies` in these tables), ASEAN5 Economies, Asian EDMEs, China and India.
+**Regional groups** (`REGION_GROUPS` in `data_section_2.py`), as in the SEACEN Capital Flows Monitor:
+
+| Group | Economies |
+|---|---|
+| Asian Advanced Economies (labelled `Asian Advance Economies` in these tables) | Hong Kong, Korea, Singapore, Chinese Taipei |
+| ASEAN5 Economies | Indonesia, Malaysia, Philippines, Thailand, Vietnam |
+| Asian EDMEs | Cambodia, Lao PDR, Mongolia, Nepal, Sri Lanka |
+| China, India | themselves |
+| Asia-Pacific | all 16 above; also the economies summed for the current account |
+
+- **Left out of the groups:** Brunei, Myanmar and Papua New Guinea. They stay in the by-economy tables (`SEACEN_ECONOMIES` still reads all 19).
+- **Spelling:** the groups are summed after `South Korea` is renamed `Korea`, so `REGION_GROUPS` uses `Korea` (and the tables' own spellings `Hong Kong SAR (China)`, `Taiwan`, `Laos`). An economy spelled differently from the table is silently left out of its group, with no error.
+- **Half-years (BoP):** `half_year_sums()` pairs each year's Q1 with Q2 (`1H`) and Q3 with Q4 (`2H`) by their dates. A half-year is built once both of its quarters are in the table, and an economy that has reported only one of the two gets a blank for that half-year, so it drops out of that half-year's group totals instead of adding a one-quarter sum. Check the latest half-year's group totals when an economy is late.
 
 ## Functions and outputs
 
@@ -249,6 +266,7 @@ Sizes and latest periods are as of the latest upload (<!--live:*:updated-->28 Oc
    - **ASEAN-5:** Indonesia, Malaysia, Philippines, Thailand, Vietnam.
    - **Asian Advanced Economies:** Hong Kong, Korea, Singapore, Chinese Taipei.
    - **China and India:** their own growth.
+   - **Missing members:** a group is blank in any quarter where one of its members has no data yet (e.g. Asia and ASEAN-5 while China or Vietnam hasn't reported). It is not re-weighted over the rest and the missing economy isn't counted as 0%.
 
 #### Yearly change tables (`forex_exchange`, `sovereign_bond_yields`, `stock_price_index`)
 
@@ -370,10 +388,10 @@ These are worth checking whenever the data is refreshed:
 3. **FX counts a missing month as 0.** If an exchange rate is missing in the first or last month of a year, the "change" becomes ±100% or the full level. Bond yields and stocks skip missing months instead. Changing FX to match them is a two-line fix in `forex_exchange()`.
 4. **Vietnam CPI comes from two sources.** Before Nov 2025 it's from `VN CPI`; from Nov 2025 it's from `Inflation`. If both are updated inconsistently, there can be a jump where they meet.
 5. **Unit detection in CPI.** A row counts as already-YoY only if its unit is exactly `Prev Year=100` or `%`. If CEIC changes a unit label, the row would get the YoY formula applied to a YoY rate, giving nonsense numbers without an error.
-6. **Partial group averages.**
+6. **Partial group averages and totals.**
    - Forecasts re-weight when an economy is missing, so a group's figure can be based on fewer economies than usual.
    - The FSI's Asian Advanced Economies and ASEAN-4 simple averages also skip missing economies.
-7. **Region names differ between tables.** Matching across tables (e.g. in the dashboard's colour map) needs care:
+   - The Section 2 group totals are sums, so an economy without data (e.g. one that hasn't reported the latest half-year's second quarter) is left out of that period's total. Quarterly GDP growth groups are left blank instead.7. **Region names differ between tables.** Matching across tables (e.g. in the dashboard's colour map) needs care:
 
    | Table | Korea | Hong Kong | ASEAN group |
    |---|---|---|---|

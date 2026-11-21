@@ -9,17 +9,24 @@ What has changed in the SEACEN Capital Flow Monitor Dashboard, newest version fi
 
 The version shown in the dashboard's sidebar is read from the first entry below. To release a new version, add an entry at the top, in the same format (`## <version> — <date>`).
 
-## 2.2.0 — 18 November 2026
+## 2.2.0 — 21 November 2026
 
 ### New
 - **Capital Flows, quarterly IIP:** an economy that hasn't reported the latest quarter yet now keeps its latest position, instead of showing a gap and dropping out of the regional totals. For example, if Cambodia has data for 1Q2026 but not 2Q2026, its 2Q2026 position repeats 1Q2026. Chinese Taipei's latest annual position fills the quarters after it in the same way. The BoP flows are not filled.
 - **Data pipeline, `iip_missing`:** a new worksheet in the Section 2 sheet lists every quarterly IIP item that was filled: the economy, the item, its last quarter with data, the value used, the quarters filled and how many. It works like `fsi_missing` for the Financial Stress Indices.
+- **Capital Flows, central-bank data:** blanks in the IMF quarterly BoP and IIP data are now filled from the central banks' own data, where they have it. IMF values are never replaced. Where a central bank records BoP assets with the opposite sign to the IMF (e.g. Malaysia, Vietnam), its values are reversed to match. For example, Sri Lanka's IIP for 2Q2020 to 4Q2021, missing from the IMF data, now comes from its central bank. A new `cb_filled` worksheet lists every item filled. This replaces two unused functions that overwrote a fixed list of 2025 quarters.
 
 ### Changed
 - **New address:** the dashboard is now published at <https://aizudeenjapri.shinyapps.io/seacen-cfm-dashboard/>, on a paid shinyapps.io account. The previous address, <https://ahmadaizudeen.shinyapps.io/seacen-cfm-dashboard/>, still works for now but no longer receives updates.
 - **About tab (Deploying):** how to publish under another shinyapps.io account, and the instance settings of paid plans.
 - **FSI cutoff:** the automatic cutoff of the Financial Stress Indices now follows the date of the data run, not the data: last month after the 7th of the month, otherwise the month before last (e.g. a run on 18 November covers up to October). Inputs without data for that month are carried forward and listed, as before. A month can still be set by hand with `--cutoff YYYY-MM`.
 - **About tab (Updating the data) and Data pipeline tab:** after a data upload, wait about 5 minutes for Google to republish the sheets, then restart the app on shinyapps.io (**Applications → (the app) → Restart**) so the live dashboard shows the new data.
+- **Capital Flows, regional groups:** as in the SEACEN Capital Flows Monitor, the groups now cover 16 economies. Asian EDMEs are Cambodia, Lao PDR, Mongolia, Nepal, and Sri Lanka, and the Asia-Pacific total (and the current account) leaves out Brunei Darussalam, Myanmar and Papua New Guinea. These three are still shown in the By economy view. The chart notes say so.
+
+### Fixed
+- **Capital Flows, Korea in the regional totals:** Korea was left out of Asian Advanced Economies and the Asia-Pacific total, in every BoP and IIP table (half-yearly and annual). It is now included, so these totals are higher than before (e.g. Asia-Pacific IIP assets by about US$3 trillion).
+- **Capital Flows, latest half-year of BoP:** the half-yearly BoP tables always dropped the latest quarter, so when the data ended at a 2Q or 4Q the latest half-year (e.g. 1H2026) was missing. Quarters are now paired by date. An economy that has reported only one of the two quarters is left out of that half-year, rather than counted with a one-quarter sum.
+- **Quarterly GDP Growth, regional groups:** when a member economy had no data yet for a quarter (e.g. China and Vietnam in 2026), the Asia and ASEAN-5 averages counted it as 0% growth and fell sharply. A group is now left blank for that quarter.
 
 ## 2.1.1 — 4 November 2026
 

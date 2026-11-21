@@ -65,7 +65,7 @@ SPREADSHEETS = {
 # worksheets of these names, which other apps read.
 SECTION2_WORKSHEETS = [
     "quarterly_type_half", "quarterly_type_quarter", "quarterly_region_half",
-    "annual_type_full", "annual_region_full", "iip_missing",
+    "annual_type_full", "annual_region_full", "iip_missing", "cb_filled",
 ]
 
 

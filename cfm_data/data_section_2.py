@@ -38,7 +38,42 @@ TAIWAN_WORKBOOKS = {
     "IIP": "CB IIP Annual",
 }
 
+# The economies in each regional group, spelled as in the tables at the point
+# the groups are summed (after "South Korea" is renamed "Korea"). Brunei,
+# Myanmar and Papua New Guinea stay in the by-economy tables but are left out
+# of every group, including the Asia-Pacific total and the current account, as
+# in the SEACEN Capital Flows Monitor.
+ASIAN_ADVANCED = ['Hong Kong SAR (China)', 'Korea', 'Singapore', 'Taiwan']
+ASEAN5 = ['Indonesia', 'Malaysia', 'Philippines', 'Thailand', 'Vietnam']
+ASIAN_EDMES = ['Cambodia', 'Laos', 'Mongolia', 'Nepal', 'Sri Lanka']
+REGION_GROUPS = {
+    'Asia-Pacific': ASIAN_ADVANCED + ASEAN5 + ASIAN_EDMES + ['China', 'India'],
+    'Asian Advance Economies': ASIAN_ADVANCED,
+    'ASEAN5 Economies': ASEAN5,
+    'Asian EDMEs': ASIAN_EDMES,
+    'China': ['China'],
+    'India': ['India'],
+}
+
 warnings.filterwarnings("ignore")
+
+
+def half_year_sums(df: pd.DataFrame, label_cols: int = 4) -> pd.DataFrame:
+    """Quarterly flows (US$ million, one column per quarter) -> half-yearly
+    sums in US$ billion ("1H2026" = Q1 + Q2, "2H2026" = Q3 + Q4), with the
+    label columns first. Quarters are paired by their dates, not their
+    positions. A half-year is built only once both of its quarters are in the
+    table, and an economy missing either quarter gets a blank for that
+    half-year rather than a one-quarter sum."""
+    out = df[df.columns[:label_cols]].reset_index(drop=True)
+    values = df[df.columns[label_cols:]].apply(pd.to_numeric, errors="coerce").reset_index(drop=True)
+    by_quarter = {(d.year, (d.month - 1) // 3 + 1): d for d in values.columns}
+    for year in sorted({year for year, _ in by_quarter}):
+        for half, (first, second) in ((1, (1, 2)), (2, (3, 4))):
+            if (year, first) in by_quarter and (year, second) in by_quarter:
+                total = values[by_quarter[(year, first)]] + values[by_quarter[(year, second)]]
+                out[f"{half}H{year}"] = total / 1000
+    return out
 
 
 def check_paths() -> None:
@@ -128,7 +163,93 @@ def fill_to_latest_quarter(df: pd.DataFrame, report: list | None = None, label_c
     return df
 
 
-def bop_quarterly(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+CB_FILLED_COLUMNS = ["Dataset", "Economy", "Item", "Quarters", "Count", "Sign"]
+# How the central-bank sign convention is checked against the IMF's, per
+# economy and side (assets, liabilities, current account): of the quarters
+# where both have a value (above US$1 million either way), at least this share
+# must agree in sign (values used as they are) or disagree (values reversed),
+# and there must be at least CB_MIN_OVERLAP such quarters.
+CB_SIGN_AGREEMENT = 0.9
+CB_MIN_OVERLAP = 8
+
+
+def _side(item: str) -> str:
+    if item.endswith("Assets"):
+        return "Assets"
+    if item.endswith("Liabilities"):
+        return "Liabilities"
+    return "Current account"
+
+
+def fill_from_central_bank(df: pd.DataFrame, cb: pd.DataFrame, dataset: str, short_titles: dict,
+                           report: list | None = None, label_cols: int = 4) -> pd.DataFrame:
+    """Fills blank cells of the IMF quarterly table `df` from the central-bank
+    table `cb` (same economy, item and quarter). Only blanks are filled: IMF
+    values are never replaced, and quarters the IMF table doesn't have aren't
+    added. `df` names its items by their long description and `cb` by their
+    short title; `short_titles` maps one to the other.
+
+    Some central banks record BoP assets with the opposite sign to the IMF
+    (e.g. Cambodia, Malaysia and Vietnam). So for each economy and side
+    (assets, liabilities, current account), the quarters where both have a
+    value decide the sign: values are used as they are if at least
+    CB_SIGN_AGREEMENT of them agree, reversed if as many disagree, and that
+    side isn't filled otherwise (or with fewer than CB_MIN_OVERLAP such
+    quarters). Every item with blanks the central bank has values for is added
+    to `report` (columns CB_FILLED_COLUMNS): its quarters, and in "Sign"
+    whether they were filled as reported, reversed, or not filled."""
+    periods = [p for p in df.columns[label_cols:] if p in set(cb.columns[label_cols:])]
+    if not periods:
+        return df
+    items = df["Type"].map(lambda t: short_titles.get(t, t))
+    keys = list(zip(df["Region"], items))
+    imf = df[periods].apply(pd.to_numeric, errors="coerce")
+    cbv = cb.set_index(["Region", "Type"])[periods].apply(pd.to_numeric, errors="coerce")
+    cbv = cbv[~cbv.index.duplicated()].reindex(keys)
+    cbv.index = df.index
+
+    side = pd.Series([f"{region}|{_side(str(item))}" for region, item in keys], index=df.index)
+    both = imf.notna() & cbv.notna() & (imf.abs() > 1) & (cbv.abs() > 1)
+    agree = both & ((imf > 0) == (cbv > 0))
+    n_both = both.sum(axis=1).groupby(side).sum()
+    n_agree = agree.sum(axis=1).groupby(side).sum()
+    sign = {}
+    for key in n_both.index:
+        total, same = n_both[key], n_agree[key]
+        if total >= CB_MIN_OVERLAP and same >= CB_SIGN_AGREEMENT * total:
+            sign[key] = 1
+        elif total >= CB_MIN_OVERLAP and total - same >= CB_SIGN_AGREEMENT * total:
+            sign[key] = -1
+
+    filled = {}
+    for i in df.index:
+        gap = imf.loc[i].isna() & cbv.loc[i].notna()
+        quarters = [p for p in periods if gap[p]]
+        if not quarters:
+            continue
+        factor = sign.get(side[i])
+        if factor is not None:
+            df.loc[i, quarters] = cbv.loc[i, quarters] * factor
+            filled[df.at[i, "Region"]] = filled.get(df.at[i, "Region"], 0) + 1
+        if report is not None:
+            report.append({
+                "Dataset": dataset,
+                "Economy": df.at[i, "Region"],
+                "Item": items[i],
+                "Quarters": ", ".join(_quarter_label(p) for p in quarters),
+                "Count": len(quarters),
+                "Sign": {1: "as reported", -1: "reversed"}.get(
+                    factor, "not filled: its sign convention can't be matched to the IMF's"),
+            })
+    for region, count in sorted(filled.items()):
+        print(f"{dataset} quarterly: {region} filled from its central bank ({count} items)")
+    return df
+
+
+def bop_quarterly(year_use:int = 2019, report: list | None = None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """The quarterly BoP tables: (by half-year, by quarter, by regional group).
+    Blanks in the IMF data are filled from the central-bank workbook first;
+    what was filled is added to `report` (see fill_from_central_bank)."""
     df_init = pd.read_excel(automation_path, sheet_name='BoP edit')
 
     df_all_annual = read_bop_iip('IMF BOP Quarterly')
@@ -204,36 +325,22 @@ def bop_quarterly(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame, pd.D
     df_all_annual_2.sort_values(by=['Type', 'Region'], inplace=True)
     df_all_annual_2.reset_index(drop=True, inplace=True)
 
+    # blanks in the IMF data filled from the central-bank workbook, before any sums
+    df_all_annual_2 = fill_from_central_bank(df_all_annual_2, cb_bop_quarterly(year_use), "BoP",
+                                             dict(zip(df_init['desc'], df_init['short_title'])), report)
+
     init_dict = df_init.to_dict()
     df_dict = dict()
     for x in init_dict['desc'].values():
         df_temp = df_all_annual_2[(df_all_annual_2[df_all_annual_2.columns[0]] == x)].reset_index(drop=True)
         df_dict[x] = df_temp
 
-    # calculate the sum of the columns (1H and 2H) for each year
-    num1, num2 = 0, 1
-    df_col = df_all_annual_2.columns[4:][:-1]
-    df_temp_col_1 = df_all_annual_2[df_all_annual_2.columns[:4]].reset_index(drop=True)
-
-    for x in range(len(df_col)//2):
-        df_col_temp = (df_all_annual_2[df_col[num1]] + df_all_annual_2[df_col[num1 + 1]]).div(1000)
-        year = df_col[num1].year
-        df_col_temp.reset_index(drop=True, inplace=True)
-        df_temp_col_1[f'{num2}H{year}'] = df_col_temp
-        num1 += 2
-        num2 += 1
-        if num2 == 3:
-            num2 = 1
+    # half-yearly sums (1H = Q1 + Q2, 2H = Q3 + Q4), in US$ billion
+    df_temp_col_1 = half_year_sums(df_all_annual_2)
 
     df_temp_col_1.drop(columns=['Last Update Time', 'Unit'], inplace=True)
 
-    calc_dict = {'Asia-Pacific': seacen_country,
-             'Asian Advance Economies': ['Hong Kong SAR (China)', 'South Korea', 'Singapore', 'Taiwan'],
-             'ASEAN5 Economies': ['Indonesia', 'Malaysia', 'Philippines', 'Thailand', 'Vietnam'],
-             'Asian EDMEs': ['Brunei', 'Cambodia', 'Laos', 'Mongolia', 'Nepal', 'Sri Lanka', 'Papua New Guinea', 'Myanmar'],
-             'China': ['China'],
-             'India': ['India'],
-             }
+    calc_dict = REGION_GROUPS
 
     ###################### this is for equity ######################
 
@@ -294,7 +401,8 @@ def bop_quarterly(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame, pd.D
 
     ###################### this is for caq data ######################
 
-    caq_data = df_temp_col_1[(df_temp_col_1['Type'].isin(df_init[(df_init['group'] == 'Current Account')]['desc'].to_list()[1:]))]
+    caq_data = df_temp_col_1[(df_temp_col_1['Type'].isin(df_init[(df_init['group'] == 'Current Account')]['desc'].to_list()[1:]))
+                             & df_temp_col_1['Region'].isin(REGION_GROUPS['Asia-Pacific'])]
     caq_data_calc = caq_data.groupby(['Type']).sum()
     caq_data_calc.loc['Current Account Balance'] = caq_data_calc.sum()
     caq_data_calc['Region'] = 'Asia-Pacific'
@@ -369,13 +477,7 @@ def bop_annual(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame]:
         df_temp = df_all_annual_2[(df_all_annual_2[df_all_annual_2.columns[0]] == x)].reset_index(drop=True)
         df_dict[x] = df_temp
 
-    calc_dict = {'Asia-Pacific': seacen_country,
-                'Asian Advance Economies': ['Hong Kong SAR (China)', 'South Korea', 'Singapore', 'Taiwan'],
-                'ASEAN5 Economies': ['Indonesia', 'Malaysia', 'Philippines', 'Thailand', 'Vietnam'],
-                'Asian EDMEs': ['Brunei', 'Cambodia', 'Laos', 'Mongolia', 'Nepal', 'Sri Lanka', 'Papua New Guinea', 'Myanmar'],
-                'China': ['China'],
-                'India': ['India'],
-                }
+    calc_dict = REGION_GROUPS
 
     ###################### this is for equity ######################
 
@@ -438,7 +540,8 @@ def bop_annual(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     ###################### this is for caq data ######################
 
-    caq_data = df_all_annual_2[(df_all_annual_2['Type'].isin(df_init[(df_init['group'] == 'Current Account')]['desc'].to_list()[1:]))]
+    caq_data = df_all_annual_2[(df_all_annual_2['Type'].isin(df_init[(df_init['group'] == 'Current Account')]['desc'].to_list()[1:]))
+                               & df_all_annual_2['Region'].isin(REGION_GROUPS['Asia-Pacific'])]
     caq_data.drop(columns=['Last Update Time', 'Region', 'Unit'], inplace=True)
     caq_data_calc = caq_data.groupby(['Type']).sum()
     caq_data_calc.loc['Current Account Balance'] = caq_data_calc.sum()
@@ -459,9 +562,12 @@ def bop_annual(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     return df_all_annual_2, df_main
 
-def iip_quarterly(year_use:int = 2019, report: list | None = None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def iip_quarterly(year_use:int = 2019, report: list | None = None,
+                  cb_report: list | None = None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """The quarterly IIP tables: (by half-year, by quarter, by regional group).
-    Rows filled up to the latest quarter are added to `report` (see
+    Blanks in the IMF data are first filled from the central-bank workbook
+    (added to `cb_report`, see fill_from_central_bank); then rows still short
+    of the latest quarter are carried forward (added to `report`, see
     fill_to_latest_quarter), with their items named as in the tables."""
     df_init = pd.read_excel(automation_path, sheet_name='IIP edit')
 
@@ -509,6 +615,10 @@ def iip_quarterly(year_use:int = 2019, report: list | None = None) -> tuple[pd.D
     df_all_annual_2.sort_values(by=['Type', 'Region'], inplace=True)
     df_all_annual_2.reset_index(drop=True, inplace=True)
 
+    # blanks in the IMF data filled from the central-bank workbook, before the carry-forward
+    df_all_annual_2 = fill_from_central_bank(df_all_annual_2, cb_iip_quarterly(year_use), "IIP",
+                                             dict(zip(df_init['desc'], df_init['short_title'])), cb_report)
+
     # positions are stocks, so an economy missing the newest quarter(s) keeps its latest position
     filled = []
     df_all_annual_2 = fill_to_latest_quarter(df_all_annual_2, filled)
@@ -533,13 +643,7 @@ def iip_quarterly(year_use:int = 2019, report: list | None = None) -> tuple[pd.D
 
     df_temp_col_1.drop(columns=['Last Update Time', 'Unit'], inplace=True)
 
-    calc_dict = {'Asia-Pacific': seacen_country,
-             'Asian Advance Economies': ['Hong Kong SAR (China)', 'South Korea', 'Singapore', 'Taiwan'],
-             'ASEAN5 Economies': ['Indonesia', 'Malaysia', 'Philippines', 'Thailand', 'Vietnam'],
-             'Asian EDMEs': ['Brunei', 'Cambodia', 'Laos', 'Mongolia', 'Nepal', 'Sri Lanka', 'Papua New Guinea', 'Myanmar'],
-             'China': ['China'],
-             'India': ['India'],
-             }
+    calc_dict = REGION_GROUPS
 
     ###################### this is for equity ######################
 
@@ -600,7 +704,8 @@ def iip_quarterly(year_use:int = 2019, report: list | None = None) -> tuple[pd.D
 
     ###################### this is for caq data ######################
 
-    caq_data = df_temp_col_1[(df_temp_col_1['Type'].isin(df_init[(df_init['group'] == 'Current Account')]['desc'].to_list()[1:]))]
+    caq_data = df_temp_col_1[(df_temp_col_1['Type'].isin(df_init[(df_init['group'] == 'Current Account')]['desc'].to_list()[1:]))
+                             & df_temp_col_1['Region'].isin(REGION_GROUPS['Asia-Pacific'])]
     caq_data_calc = caq_data.groupby(['Type']).sum()
     caq_data_calc.loc['Current Account Balance'] = caq_data_calc.sum()
     caq_data_calc['Region'] = 'Asia-Pacific'
@@ -669,13 +774,7 @@ def iip_annual(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame]:
         df_temp = df_all_annual_2[(df_all_annual_2[df_all_annual_2.columns[0]] == x)].reset_index(drop=True)
         df_dict[x] = df_temp
 
-    calc_dict = {'Asia-Pacific': seacen_country,
-             'Asian Advance Economies': ['Hong Kong SAR (China)', 'South Korea', 'Singapore', 'Taiwan'],
-             'ASEAN5 Economies': ['Indonesia', 'Malaysia', 'Philippines', 'Thailand', 'Vietnam'],
-             'Asian EDMEs': ['Brunei', 'Cambodia', 'Laos', 'Mongolia', 'Nepal', 'Sri Lanka', 'Papua New Guinea', 'Myanmar'],
-             'China': ['China'],
-             'India': ['India'],
-             }
+    calc_dict = REGION_GROUPS
 
     ###################### this is for equity ######################
 
@@ -814,69 +913,17 @@ def cb_iip_quarterly(year_use:int = 2019) -> pd.DataFrame:
     
     return df_all_annual_2
 
-def to_combine_bopq(year_use:int = 2019):
-    x1, y1, z1 = bop_quarterly()
-    y2 = cb_bop_quarterly()
-    df_temp2 = pd.DataFrame(columns=y1.columns)
-    temp1 = pd.DataFrame(columns=y1.columns)
-    index_list = []
-    date_use = {'Laos': [datetime(2025, 9, 1)],
-                'Malaysia': [datetime(2025, 3, 1), datetime(2025, 6, 1), datetime(2025, 9, 1)],
-                'Mongolia': [datetime(2025, 6, 1), datetime(2025, 9, 1)],
-                'Nepal': [datetime(2025, 9, 1)],
-                'Sri Lanka': [datetime(2025, 6, 1), datetime(2025, 9, 1)],
-                }
-
-    for x,y in zip(y2['Type'].values, y2['Region'].values):
-        if y not in date_use.keys():
-            continue
-        temp1 = y1[(y1['Type'] == x) & (y1['Region'] == y)]
-        index_list.append(temp1.index[0])
-        temp1.sort_values(by=['Type', 'Region'], inplace=True)
-        temp1[date_use[y]] = y2[(y2['Type'] == x) & (y2['Region'] == y)][date_use[y]].values
-        df_temp2 = pd.concat([df_temp2, temp1], axis=0)
-        
-    y1.drop(index_list, inplace=True, axis=0) ########################## this line is new
-    df_temp2 = pd.concat([y1, df_temp2], axis=0) ########################## this line is new
-    df_temp2.sort_values(by=['Type', 'Region'], inplace=True)
-    df_temp2.reset_index(drop=True, inplace=True)
-    return df_temp2
-
-def to_combine_iipq(year_use:int = 2019):
-    x1, y1, z1 = iip_quarterly()
-    y2 = cb_iip_quarterly()
-    df_temp2 = pd.DataFrame(columns=y1.columns)
-    temp1 = pd.DataFrame(columns=y1.columns)
-    index_list = []
-    date_use = {
-                'Malaysia': [datetime(2025, 3, 1), datetime(2025, 6, 1), datetime(2025, 9, 1)],                
-                'Sri Lanka': [datetime(2025, 6, 1), datetime(2025, 9, 1), ],
-                }
-
-    for x,y in zip(y2['Type'].values, y2['Region'].values):
-        if y not in date_use.keys():
-            continue
-        temp1 = y1[(y1['Type'] == x) & (y1['Region'] == y)]
-        index_list.append(temp1.index[0])
-        temp1.sort_values(by=['Type', 'Region'], inplace=True)
-        temp1[date_use[y]] = y2[(y2['Type'] == x) & (y2['Region'] == y)][date_use[y]].values
-        df_temp2 = pd.concat([df_temp2, temp1], axis=0)
-
-    y1.drop(index_list, inplace=True, axis=0) ########################## this line is new
-    df_temp2 = pd.concat([y1, df_temp2], axis=0) ########################## this line is new
-    df_temp2.sort_values(by=['Type', 'Region'], inplace=True)
-    df_temp2.reset_index(drop=True, inplace=True)
-    return df_temp2
-
-def main(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def main(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """The Section 2 tables: quarterly_type_half, quarterly_type_quarter,
-    quarterly_region_half, annual_type_full, annual_region_full and
-    iip_missing (the quarterly IIP rows filled up to the latest quarter)."""
+    quarterly_region_half, annual_type_full, annual_region_full, iip_missing
+    (the quarterly IIP rows filled up to the latest quarter) and cb_filled
+    (the quarterly BoP and IIP blanks filled from the central-bank workbooks)."""
     check_paths()
     iip_missing = []
-    df1_1, df1_2, df1_3 = iip_quarterly(year_use, iip_missing)
+    cb_filled = []
+    df1_1, df1_2, df1_3 = iip_quarterly(year_use, iip_missing, cb_filled)
     df2_1, df2_2 = iip_annual(year_use)
-    df3_1, df3_2, df3_3 = bop_quarterly(year_use)
+    df3_1, df3_2, df3_3 = bop_quarterly(year_use, cb_filled)
     df4_1, df4_2 = bop_annual(year_use)
 
     df1_1.insert(loc=0, column='Group2', value='IIP Quarterly')
@@ -902,5 +949,8 @@ def main(year_use:int = 2019) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame,
     # one block per economy, its items in the tables' order
     iip_missing = pd.DataFrame(iip_missing, columns=IIP_MISSING_COLUMNS).sort_values("Economy", kind="stable")
     iip_missing.reset_index(drop=True, inplace=True)
+    cb_filled = pd.DataFrame(cb_filled, columns=CB_FILLED_COLUMNS).sort_values(["Dataset", "Economy"], kind="stable")
+    cb_filled.reset_index(drop=True, inplace=True)
 
-    return quarterly_type_half, quarterly_type_quarter, quarterly_region_half, annual_type_full, annual_region_full, iip_missing
+    return (quarterly_type_half, quarterly_type_quarter, quarterly_region_half, annual_type_full, annual_region_full,
+            iip_missing, cb_filled)

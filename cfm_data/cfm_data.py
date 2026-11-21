@@ -150,7 +150,8 @@ def gdp_growth(path: Path = RAW_PATH) -> pd.DataFrame:
     """
     Quarterly real GDP growth (Quarter, Region, Value) for Asia, China, India,
     ASEAN-5 and Asian Advanced Economies. The groups are PPP-weighted
-    averages, using each year's IMF WEO PPP GDP for all four of its quarters.
+    averages, using each year's IMF WEO PPP GDP for all four of its quarters;
+    a group is blank in a quarter where any of its members has no data yet.
     """
     annual = fetch_ppp_gdp(list(GDP_IMF_NAMES), GDP_FIRST_YEAR, date.today().year).T
     annual.index = annual.index.map(GDP_IMF_NAMES)
@@ -184,7 +185,10 @@ def gdp_growth(path: Path = RAW_PATH) -> pd.DataFrame:
 
     def weighted(members: list[str]) -> pd.Series:
         w = weights.loc[members]
-        return (w / w.sum() * growth.loc[members]).sum()
+        g = growth.loc[members]
+        # A group needs every member's growth: with one missing, the weighted
+        # sum would count it as 0% growth, so that quarter is left blank.
+        return (w / w.sum() * g).sum().where(g.notna().all())
 
     result = pd.concat(
         {

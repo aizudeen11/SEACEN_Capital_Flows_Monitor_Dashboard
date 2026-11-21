@@ -34,6 +34,8 @@ The SEACEN Capital Flow Monitor Dashboard should not be reported as representing
   - **Asian Advanced Economies:** Hong Kong, China; Korea; Singapore; and Chinese Taipei.
   - **ASEAN5:** Indonesia, Malaysia, Philippines, Thailand, and Vietnam.
   - **Asian Emerging and Developing Market Economies (EDMEs):** Brunei Darussalam, Cambodia, Lao PDR, Mongolia, Myanmar, Nepal, Papua New Guinea, and Sri Lanka.
+- In the **Capital Flows** tab, as in the SEACEN Capital Flows Monitor, the regional groups cover 16 economies: Asian EDMEs are Cambodia, Lao PDR, Mongolia, Nepal, and Sri Lanka, and the Asia-Pacific total leaves out Brunei Darussalam, Myanmar and Papua New Guinea. These three are still shown in the By economy view.
+- A regional figure is left blank for a period in which any of its member economies has no data yet, rather than counting that economy as zero. This applies to the Quarterly GDP Growth groups and, in the Capital Flows tab, to each economy's half-year BoP flows (an economy that has reported only one of the two quarters is left out of that half-year).
 
 ## Abbreviations
 
@@ -103,7 +105,7 @@ The **Capital Flows** tab shows the balance of payments (BoP) and international 
 |---|---|
 | Dataset | Balance of Payments (flows) or International Investment Position (end-of-period positions) |
 | Frequency | Annual, half-yearly or quarterly. Quarterly data is shown by economy only |
-| View | **By region:** the regional groups stacked, with the Asia-Pacific total as a line. **By category:** the components (direct investment, portfolio equity and debt, loans, …) of one regional group. **By economy:** one item for the selected economies |
+| View | **By region:** the regional groups stacked, with the Asia-Pacific total (16 economies; see **Notes** above) as a line. **By category:** the components (direct investment, portfolio equity and debt, loans, …) of one regional group. **By economy:** one item for the selected economies, from all 19 |
 | Years | which years to show |
 | Account | assets (for BoP: resident capital flows), liabilities (non-resident capital flows) or the current account (BoP only); for the By region and By category views |
 | Regional groups / Regional group / Item / Economies | depend on the view |

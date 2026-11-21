@@ -657,7 +657,8 @@ dashboard_page = ui.layout_sidebar(
                 note="Note: Regional growth rates are weighted averages of individual growth rates, using GDP "
                 "in PPP as weights. Asia Economies include China, India, Mongolia, ASEAN-5 (Indonesia, "
                 "Malaysia, Philippines, Thailand, and Vietnam), and Asian Advanced Economies (Hong Kong, "
-                "China; Korea; Singapore; and Chinese Taipei).",
+                "China; Korea; Singapore; and Chinese Taipei). A group is left blank in a quarter for which "
+                "any of its member economies has no data yet.",
                 source="Source: SEACEN staff calculations using data from national sources accessed through "
                 "the CEIC Database.",
             ),

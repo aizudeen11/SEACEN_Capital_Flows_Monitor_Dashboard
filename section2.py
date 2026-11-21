@@ -243,16 +243,17 @@ def capital_flows_ui(header, footer):
                         "Note: US$ billion. Balance of payments: assets are resident capital flows (net "
                         "acquisition of foreign financial assets) and liabilities are non-resident capital "
                         "flows (net incurrence of liabilities); half-yearly values are the sum of the two "
-                        "quarters. International investment position: end-of-period positions (half-yearly: "
+                        "quarters, and an economy that has reported only one of them is left out of that "
+                        "half-year. International investment position: end-of-period positions (half-yearly: "
                         "end-June and end-December). Bars are stacked; the line is their total."
                     ),
                     ui.div(
                         "Regional groups: Asian Advanced Economies (Hong Kong, China; Korea; Singapore; and "
                         "Chinese Taipei), ASEAN5 (Indonesia, Malaysia, Philippines, Thailand, and Vietnam), "
-                        "Asian EDMEs (Brunei Darussalam, Cambodia, Lao PDR, Mongolia, Myanmar, Nepal, Papua "
-                        "New Guinea, and Sri Lanka), China and India. Asia-Pacific is the total of all 19 "
-                        "SEACEN economies. Singapore's quarterly BoP components are estimated from its totals "
-                        "using fixed shares.",
+                        "Asian EDMEs (Cambodia, Lao PDR, Mongolia, Nepal, and Sri Lanka), China and India. "
+                        "Asia-Pacific is the total of these 16 economies, as in the SEACEN Capital Flows "
+                        "Monitor; Brunei Darussalam, Myanmar and Papua New Guinea are shown by economy only. "
+                        "Singapore's quarterly BoP components are estimated from its totals using fixed shares.",
                         class_="mt-1",
                     ),
                 ),
